@@ -1,0 +1,2236 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>VisualCam AR - Realidad Aumentada con Oclusión</title>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #0a0e17;
+            color: #ffffff;
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+            position: relative;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        #ar-container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+            background: #000;
+        }
+
+        #cameraBgImage {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            z-index: 1;
+            display: none;
+            background: #000;
+        }
+
+        #cameraBgImage.active { display: block; }
+
+        /* Canvas de oclusión (máscara) - se superpone sobre la cámara */
+        #occlusionCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 2;
+            pointer-events: none;
+            display: none;
+        }
+
+        #occlusionCanvas.active {
+            display: block;
+        }
+
+        #ar-container canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 3;
+            pointer-events: auto !important;
+            display: block;
+            touch-action: none;
+        }
+
+        .ui-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .header-ar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.8rem 1.5rem;
+            background: linear-gradient(180deg, rgba(0,0,0,0.85) 0%, transparent 100%);
+            pointer-events: auto;
+            flex-wrap: wrap;
+            gap: 0.8rem;
+        }
+
+        .header-ar .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.8rem;
+            text-decoration: none;
+            color: white;
+        }
+
+        .header-ar .logo i { font-size: 1.5rem; color: #4a7cf7; }
+        .header-ar .logo h1 { font-size: 1.2rem; font-weight: 600; color: white; }
+        .header-ar .logo span { font-size: 0.65rem; color: rgba(255,255,255,0.4); display: block; }
+
+        .nav-modules {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            pointer-events: auto;
+            flex-wrap: wrap;
+        }
+
+        .nav-modules a {
+            color: rgba(255, 255, 255, 0.5);
+            text-decoration: none;
+            padding: 0.3rem 0.8rem;
+            border-radius: 50px;
+            font-size: 0.75rem;
+            transition: all 0.3s ease;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            white-space: nowrap;
+        }
+
+        .nav-modules a:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: white;
+            border-color: rgba(255, 255, 255, 0.1);
+        }
+
+        .nav-modules a.active {
+            background: rgba(74, 124, 247, 0.2);
+            color: #4a7cf7;
+            border-color: rgba(74, 124, 247, 0.3);
+            box-shadow: 0 0 20px rgba(74, 124, 247, 0.1);
+        }
+
+        .nav-modules a i { font-size: 0.8rem; }
+        .nav-modules a .badge {
+            background: rgba(76, 217, 100, 0.2);
+            color: #4cd964;
+            font-size: 0.55rem;
+            padding: 0.05rem 0.4rem;
+            border-radius: 10px;
+            font-weight: 600;
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.3rem 1rem;
+            background: rgba(0,0,0,0.5);
+            border-radius: 20px;
+            font-size: 0.7rem;
+            color: rgba(255,255,255,0.6);
+            border: 1px solid rgba(255,255,255,0.05);
+            pointer-events: auto;
+        }
+
+        .status-badge .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #4cd964;
+            animation: pulse 2s infinite;
+        }
+
+        .status-badge .dot.inactive { background: #ff6b6b; animation: none; }
+        .status-badge .dot.occlusion { background: #ffc107; animation: pulse 1s infinite; }
+
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+        .control-panel {
+            position: absolute;
+            bottom: 1.5rem;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(10, 14, 23, 0.92);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 1.5rem;
+            padding: 0.8rem 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 1.2rem;
+            pointer-events: auto;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+            flex-wrap: wrap;
+            justify-content: center;
+            z-index: 30;
+            min-width: 280px;
+        }
+
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .control-group .label {
+            font-size: 0.55rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: rgba(255,255,255,0.3);
+            font-weight: 600;
+            min-width: 10px;
+        }
+
+        .control-group input[type="range"] {
+            width: 60px;
+            height: 3px;
+            -webkit-appearance: none;
+            appearance: none;
+            background: rgba(255,255,255,0.1);
+            border-radius: 10px;
+            outline: none;
+            transition: all 0.2s ease;
+        }
+
+        .control-group input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #4a7cf7;
+            cursor: pointer;
+            border: 2px solid rgba(255,255,255,0.1);
+            transition: all 0.2s ease;
+        }
+
+        .control-group input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.15);
+            background: #6c5ce7;
+        }
+
+        .control-group .value {
+            font-size: 0.65rem;
+            font-family: monospace;
+            color: rgba(255,255,255,0.5);
+            min-width: 32px;
+            text-align: center;
+        }
+
+        .control-divider {
+            width: 1px;
+            height: 24px;
+            background: rgba(255,255,255,0.06);
+        }
+
+        .btn-control {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.35rem 0.8rem;
+            border: none;
+            border-radius: 50px;
+            font-family: 'Inter', sans-serif;
+            font-weight: 500;
+            font-size: 0.65rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: rgba(255,255,255,0.05);
+            color: rgba(255,255,255,0.6);
+            border: 1px solid rgba(255,255,255,0.05);
+            white-space: nowrap;
+        }
+
+        .btn-control:hover {
+            transform: translateY(-1px);
+            background: rgba(255,255,255,0.08);
+            color: white;
+        }
+
+        .btn-control.primary {
+            background: linear-gradient(135deg, #4a7cf7, #6c5ce7);
+            color: white;
+            border: none;
+            box-shadow: 0 4px 16px rgba(74, 124, 247, 0.25);
+        }
+
+        .btn-control.primary:hover {
+            box-shadow: 0 8px 24px rgba(74, 124, 247, 0.35);
+            transform: translateY(-2px);
+            color: white;
+        }
+
+        .btn-control.danger {
+            background: rgba(255, 107, 107, 0.12);
+            color: #ff6b6b;
+            border-color: rgba(255, 107, 107, 0.15);
+        }
+
+        .btn-control.danger:hover {
+            background: rgba(255, 107, 107, 0.2);
+            color: #ff6b6b;
+        }
+
+        .btn-control.success {
+            background: rgba(76, 217, 100, 0.12);
+            color: #4cd964;
+            border-color: rgba(76, 217, 100, 0.15);
+        }
+
+        .btn-control.success:hover {
+            background: rgba(76, 217, 100, 0.2);
+            color: #4cd964;
+        }
+
+        .btn-control i { font-size: 0.75rem; }
+
+        .objects-panel {
+            position: absolute;
+            top: 5rem;
+            right: 1.5rem;
+            background: rgba(10, 14, 23, 0.85);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 1.5rem;
+            padding: 1rem;
+            min-width: 180px;
+            max-height: 50vh;
+            overflow-y: auto;
+            pointer-events: auto;
+            display: none;
+            z-index: 20;
+        }
+
+        .objects-panel.active { display: block; }
+        .objects-panel::-webkit-scrollbar { width: 4px; }
+        .objects-panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+
+        .objects-panel h3 {
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: rgba(255,255,255,0.25);
+            margin-bottom: 0.6rem;
+        }
+
+        .object-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.35rem 0.6rem;
+            background: rgba(255,255,255,0.02);
+            border-radius: 8px;
+            margin-bottom: 0.2rem;
+            border: 1px solid rgba(255,255,255,0.02);
+            transition: all 0.3s ease;
+            cursor: pointer;
+            font-size: 0.7rem;
+        }
+
+        .object-item:hover { background: rgba(255,255,255,0.06); }
+        .object-item.selected { 
+            background: rgba(74, 124, 247, 0.12); 
+            border-color: rgba(74, 124, 247, 0.2);
+        }
+        .object-item.occluded { opacity: 0.3; }
+
+        .object-item .name { color: rgba(255,255,255,0.7); }
+        .object-item .delete-btn {
+            background: none;
+            border: none;
+            color: rgba(255,107,107,0.3);
+            cursor: pointer;
+            padding: 0.15rem 0.4rem;
+            border-radius: 4px;
+            transition: all 0.3s ease;
+            font-size: 0.65rem;
+        }
+
+        .object-item .delete-btn:hover {
+            color: #ff6b6b;
+            background: rgba(255,107,107,0.1);
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 6rem;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(10, 14, 23, 0.95);
+            backdrop-filter: blur(20px);
+            padding: 0.4rem 1rem;
+            border-radius: 50px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            color: white;
+            font-size: 0.7rem;
+            z-index: 1000;
+            display: none;
+            animation: slideUp 0.3s ease-out;
+            font-family: 'Inter', sans-serif;
+            pointer-events: none;
+        }
+
+        .toast.show { display: flex; align-items: center; gap: 0.5rem; }
+        .toast.success { border-color: rgba(76, 217, 100, 0.2); }
+        .toast.error { border-color: rgba(255, 107, 107, 0.2); }
+        .toast.info { border-color: rgba(74, 124, 247, 0.2); }
+        .toast i { font-size: 0.7rem; }
+        .toast.success i { color: #4cd964; }
+        .toast.error i { color: #ff6b6b; }
+        .toast.info i { color: #4a7cf7; }
+
+        @keyframes slideUp {
+            0% { opacity: 0; transform: translateX(-50%) translateY(20px); }
+            100% { opacity: 1; transform: translateX(-50%) translateY(0); }
+        }
+
+        .gps-status {
+            position: absolute;
+            top: 5rem;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.6);
+            backdrop-filter: blur(10px);
+            padding: 0.2rem 1rem;
+            border-radius: 20px;
+            font-size: 0.55rem;
+            color: rgba(255,255,255,0.3);
+            pointer-events: none;
+            z-index: 5;
+            display: none;
+            border: 1px solid rgba(74,124,247,0.05);
+        }
+
+        .gps-status.active { display: block; }
+        .gps-status .gps-coords { color: #4a7cf7; font-family: monospace; }
+
+        .crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 3;
+            pointer-events: none;
+            opacity: 0.15;
+        }
+
+        .crosshair .horizontal {
+            width: 25px;
+            height: 1px;
+            background: rgba(255,255,255,0.4);
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .crosshair .vertical {
+            width: 1px;
+            height: 25px;
+            background: rgba(255,255,255,0.4);
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .crosshair .center-dot {
+            width: 2px;
+            height: 2px;
+            background: rgba(74, 124, 247, 0.4);
+            border-radius: 50%;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .object-highlight {
+            position: absolute;
+            z-index: 4;
+            pointer-events: none;
+            border: 1.5px solid rgba(74, 124, 247, 0.25);
+            border-radius: 50%;
+            display: none;
+        }
+
+        .object-highlight.active { display: block; }
+
+        .occlusion-indicator {
+            position: absolute;
+            bottom: 6.5rem;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 193, 7, 0.15);
+            backdrop-filter: blur(10px);
+            padding: 0.3rem 1rem;
+            border-radius: 20px;
+            font-size: 0.6rem;
+            color: rgba(255, 193, 7, 0.5);
+            pointer-events: none;
+            z-index: 5;
+            display: none;
+            border: 1px solid rgba(255, 193, 7, 0.1);
+        }
+
+        .occlusion-indicator.active { display: block; }
+        .occlusion-indicator .highlight { color: #ffc107; }
+
+        @media (max-width: 1024px) {
+            .nav-modules a span { display: none; }
+            .nav-modules a { padding: 0.3rem 0.6rem; }
+            .header-ar { padding: 0.6rem 1rem; }
+            .control-panel { padding: 0.6rem 1rem; gap: 0.8rem; }
+            .control-group input[type="range"] { width: 45px; }
+        }
+
+        @media (max-width: 768px) {
+            .control-panel {
+                bottom: 0.8rem;
+                padding: 0.5rem 0.8rem;
+                gap: 0.5rem;
+                border-radius: 1rem;
+                width: 96%;
+                min-width: unset;
+            }
+            .control-group .label { font-size: 0.45rem; min-width: 8px; }
+            .control-group input[type="range"] { width: 35px; }
+            .control-group .value { font-size: 0.5rem; min-width: 24px; }
+            .btn-control { padding: 0.25rem 0.5rem; font-size: 0.55rem; }
+            .btn-control i { font-size: 0.6rem; }
+            .nav-modules a i { font-size: 0.85rem; }
+            .header-ar .logo h1 { font-size: 0.9rem; }
+            .header-ar .logo span { display: none; }
+            .status-badge { font-size: 0.5rem; padding: 0.15rem 0.5rem; }
+            .objects-panel { right: 0.5rem; top: 4.5rem; min-width: 130px; padding: 0.6rem; }
+            .control-divider { height: 16px; }
+            .occlusion-indicator { font-size: 0.5rem; padding: 0.2rem 0.6rem; bottom: 6rem; }
+        }
+
+        @media (max-width: 480px) {
+            .control-panel { padding: 0.4rem 0.4rem; gap: 0.3rem; border-radius: 0.8rem; }
+            .control-group input[type="range"] { width: 25px; }
+            .control-group .value { font-size: 0.45rem; min-width: 18px; }
+            .btn-control { padding: 0.2rem 0.35rem; font-size: 0.45rem; }
+            .btn-control i { font-size: 0.5rem; }
+            .control-divider { height: 12px; }
+            .header-ar .logo i { font-size: 1rem; }
+            .header-ar .logo h1 { font-size: 0.75rem; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="ar-container">
+        <img id="cameraBgImage" alt="Stream de cámara" />
+        
+        <!-- Canvas para la máscara de oclusión -->
+        <canvas id="occlusionCanvas"></canvas>
+        
+        <div class="crosshair" id="crosshair">
+            <div class="horizontal"></div>
+            <div class="vertical"></div>
+            <div class="center-dot"></div>
+        </div>
+
+        <div class="object-highlight" id="objectHighlight"></div>
+    </div>
+
+    <div class="gps-status" id="gpsStatus">
+        <span class="gps-coords" id="gpsCoordsDisplay">--</span>
+    </div>
+
+    <div class="occlusion-indicator" id="occlusionIndicator">
+        <i class="fas fa-hand"></i> Oclusión activa: <span class="highlight" id="occlusionStatus">Mano detectada</span>
+    </div>
+
+    <div class="ui-overlay">
+        <div class="header-ar">
+            <a href="/" class="logo">
+                <i class="fas fa-cube"></i>
+                <div>
+                    <h1>VisualCam AR</h1>
+                    <span>Realidad Aumentada</span>
+                </div>
+            </a>
+            
+            <div class="nav-modules">
+                <a href="/modulos/main" class="active"><i class="fas fa-cube"></i><span>AR</span></a>
+                <a href="/modulos/modulos/camara.html"><i class="fas fa-camera"></i><span>Cámara</span></a>
+                <a href="/modulos/modulos/insertar_objeto.html"><i class="fas fa-cube"></i><span>Objetos 3D</span><span class="badge">Nuevo</span></a>
+                <a href="/modulos/modulos/ubicacion.html"><i class="fas fa-location-dot"></i><span>Ubicación</span><span class="badge">Nuevo</span></a>
+                <a href="/modulos/efectos"><i class="fas fa-magic"></i><span>Efectos</span></a>
+                <a href="/modulos/historial"><i class="fas fa-clock-rotate-left"></i><span>Historial</span></a>
+            </div>
+
+            <div class="status-badge">
+                <span class="dot" id="arStatusDot"></span>
+                <span id="arStatusText">AR Activo</span>
+            </div>
+        </div>
+
+        <div class="objects-panel" id="objectsPanel">
+            <h3><i class="fas fa-cubes"></i> Objetos</h3>
+            <div id="objectsList"></div>
+        </div>
+
+        <div class="control-panel" id="controlPanel">
+            <div class="control-group">
+                <span class="label">X</span>
+                <input type="range" id="posX" min="-5" max="5" step="0.01" value="0" />
+                <span class="value" id="posXVal">0.00</span>
+            </div>
+
+            <div class="control-group">
+                <span class="label">Y</span>
+                <input type="range" id="posY" min="-3" max="3" step="0.01" value="0" />
+                <span class="value" id="posYVal">0.00</span>
+            </div>
+
+            <div class="control-group">
+                <span class="label">Z</span>
+                <input type="range" id="posZ" min="-8" max="-0.5" step="0.01" value="-2.5" />
+                <span class="value" id="posZVal">-2.50</span>
+            </div>
+
+            <div class="control-divider"></div>
+
+            <div class="control-group">
+                <span class="label">RX</span>
+                <input type="range" id="rotX" min="-180" max="180" step="1" value="0" />
+                <span class="value" id="rotXVal">0°</span>
+            </div>
+
+            <div class="control-group">
+                <span class="label">RY</span>
+                <input type="range" id="rotY" min="-180" max="180" step="1" value="0" />
+                <span class="value" id="rotYVal">0°</span>
+            </div>
+
+            <div class="control-group">
+                <span class="label">RZ</span>
+                <input type="range" id="rotZ" min="-180" max="180" step="1" value="0" />
+                <span class="value" id="rotZVal">0°</span>
+            </div>
+
+            <div class="control-divider"></div>
+
+            <div class="control-group">
+                <span class="label">S</span>
+                <input type="range" id="scaleCtrl" min="0.1" max="3" step="0.05" value="1" />
+                <span class="value" id="scaleVal">1.00</span>
+            </div>
+
+            <div class="control-divider"></div>
+
+            <button class="btn-control primary" id="btnFixObject" title="Fijar objeto">
+                <i class="fas fa-thumbtack"></i>
+            </button>
+            <button class="btn-control" id="btnTogglePanel" title="Lista de objetos">
+                <i class="fas fa-list"></i>
+            </button>
+            <button class="btn-control success" id="btnToggleOcclusion" title="Activar/Desactivar oclusión">
+                <i class="fas fa-hand"></i>
+            </button>
+            <button class="btn-control danger" id="btnClearAll" title="Limpiar todo">
+                <i class="fas fa-trash"></i>
+            </button>
+        </div>
+    </div>
+
+    <div class="toast" id="toast">
+        <i class="fas fa-check-circle"></i>
+        <span id="toastMessage">Mensaje</span>
+    </div>
+
+    <!-- MediaPipe Hands -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+
+    <script>
+        (function() {
+            'use strict';
+
+            const CONFIG = {
+                objectDistance: 2.5,
+                maxObjects: 30,
+                defaultColor: 0x4a7cf7,
+                defaultScale: 0.8,
+                gpsScale: 30.0,
+                paralajeFactor: 1.0,
+            };
+
+            const state = {
+                fixedObjects: [],
+                cameraReady: false,
+                isARInitialized: false,
+                objectCounter: 0,
+                camaraActiva: false,
+                importedObjects: [],
+                importedLocations: [],
+                streamInterval: null,
+                gpsReference: null,
+                gpsReferencePosition: new THREE.Vector3(0, 0, 0),
+                deviceOrientation: { alpha: 0, beta: 0, gamma: 0 },
+                isTrackingOrientation: false,
+                gpsReferenceSet: false,
+                gpsWatchId: null,
+                currentLat: null,
+                currentLng: null,
+                pendingObjectsProcessed: false,
+                fixedPositions: new Map(),
+                selectedObject: null,
+                isDragging: false,
+                isRotating: false,
+                dragStartMouse: new THREE.Vector2(),
+                dragStartPos: new THREE.Vector3(),
+                dragStartRot: new THREE.Euler(),
+                raycaster: new THREE.Raycaster(),
+                mouse: new THREE.Vector2(),
+                intersectableObjects: [],
+                isPointerDown: false,
+                isUpdatingControls: false,
+                dragStartWorld: new THREE.Vector3(),
+                occlusionEnabled: true,
+                handLandmarks: null,
+                isHandDetected: false,
+                occlusionCanvas: null,
+                occlusionCtx: null,
+                occludedObjects: new Set(),
+                mediaPipeReady: false,
+            };
+
+            // DOM
+            const container = document.getElementById('ar-container');
+            const cameraBg = document.getElementById('cameraBgImage');
+            const occlusionCanvas = document.getElementById('occlusionCanvas');
+            const objectsPanel = document.getElementById('objectsPanel');
+            const objectsList = document.getElementById('objectsList');
+            const arStatusDot = document.getElementById('arStatusDot');
+            const arStatusText = document.getElementById('arStatusText');
+            const toast = document.getElementById('toast');
+            const toastMessage = document.getElementById('toastMessage');
+            const gpsStatus = document.getElementById('gpsStatus');
+            const gpsCoordsDisplay = document.getElementById('gpsCoordsDisplay');
+            const objectHighlight = document.getElementById('objectHighlight');
+            const occlusionIndicator = document.getElementById('occlusionIndicator');
+            const occlusionStatus = document.getElementById('occlusionStatus');
+
+            const posX = document.getElementById('posX');
+            const posY = document.getElementById('posY');
+            const posZ = document.getElementById('posZ');
+            const posXVal = document.getElementById('posXVal');
+            const posYVal = document.getElementById('posYVal');
+            const posZVal = document.getElementById('posZVal');
+            const rotX = document.getElementById('rotX');
+            const rotY = document.getElementById('rotY');
+            const rotZ = document.getElementById('rotZ');
+            const rotXVal = document.getElementById('rotXVal');
+            const rotYVal = document.getElementById('rotYVal');
+            const rotZVal = document.getElementById('rotZVal');
+            const scaleCtrl = document.getElementById('scaleCtrl');
+            const scaleVal = document.getElementById('scaleVal');
+
+            const btnFixObject = document.getElementById('btnFixObject');
+            const btnTogglePanel = document.getElementById('btnTogglePanel');
+            const btnToggleOcclusion = document.getElementById('btnToggleOcclusion');
+            const btnClearAll = document.getElementById('btnClearAll');
+
+            let scene, camera, renderer;
+            let gltfLoader;
+            let selectionPlane = new THREE.Plane();
+            let dragPlaneNormal = new THREE.Vector3();
+
+            function showToast(message, type = 'success') {
+                toast.className = `toast show ${type}`;
+                toastMessage.textContent = message;
+                clearTimeout(toast._timeout);
+                toast._timeout = setTimeout(() => {
+                    toast.classList.remove('show');
+                }, 2000);
+            }
+
+            // ============================================================
+            // PROCESAR OBJETOS
+            // ============================================================
+            function processPendingObjects() {
+                let objetosCargados = 0;
+
+                try {
+                    const stored = localStorage.getItem('imported_3d_objects');
+                    if (stored) {
+                        const objects = JSON.parse(stored);
+                        objects.forEach((objData) => {
+                            if (state.importedObjects.includes(objData.id)) return;
+                            try {
+                                import3DObject(objData);
+                                state.importedObjects.push(objData.id);
+                                objetosCargados++;
+                            } catch (e) {
+                                console.error('Error al importar objeto:', e);
+                            }
+                        });
+                        localStorage.removeItem('imported_3d_objects');
+                    }
+                } catch (e) {}
+
+                try {
+                    const gltfStored = localStorage.getItem('imported_gltf_models');
+                    if (gltfStored) {
+                        const models = JSON.parse(gltfStored);
+                        models.forEach((modelData) => {
+                            if (state.importedObjects.includes(modelData.id)) return;
+                            try {
+                                if (modelData.url) loadGLTFModel(modelData);
+                                else import3DObject(modelData);
+                                state.importedObjects.push(modelData.id);
+                                objetosCargados++;
+                            } catch (e) {}
+                        });
+                        localStorage.removeItem('imported_gltf_models');
+                    }
+                } catch (e) {}
+
+                try {
+                    const stored = localStorage.getItem('imported_locations');
+                    if (stored) {
+                        const locations = JSON.parse(stored);
+                        locations.forEach((locData) => {
+                            if (state.importedLocations.includes(locData.id)) return;
+                            try {
+                                importLocation(locData);
+                                state.importedLocations.push(locData.id);
+                                objetosCargados++;
+                            } catch (e) {}
+                        });
+                        localStorage.removeItem('imported_locations');
+                    }
+                } catch (e) {}
+
+                state.pendingObjectsProcessed = true;
+                if (objetosCargados > 0) {
+                    showToast(`📦 ${objetosCargados} objetos cargados`, 'success');
+                }
+                updateObjectsList();
+                updateIntersectables();
+            }
+
+            // ============================================================
+            // GPS
+            // ============================================================
+            function startGPS() {
+                if (!navigator.geolocation) {
+                    gpsStatus.classList.remove('active');
+                    setTimeout(() => {
+                        if (!state.pendingObjectsProcessed) processPendingObjects();
+                    }, 500);
+                    return;
+                }
+
+                gpsStatus.classList.add('active');
+                gpsCoordsDisplay.textContent = 'Buscando...';
+
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        const { latitude, longitude } = position.coords;
+                        state.currentLat = latitude;
+                        state.currentLng = longitude;
+                        gpsCoordsDisplay.textContent = `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+                        if (!state.gpsReferenceSet) setGPSReference(latitude, longitude);
+                        startGPSWatch();
+                    },
+                    () => {
+                        gpsCoordsDisplay.textContent = '⚠️ Error GPS';
+                        setTimeout(() => {
+                            if (!state.pendingObjectsProcessed) processPendingObjects();
+                        }, 500);
+                        startGPSWatch();
+                    },
+                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
+                );
+            }
+
+            function startGPSWatch() {
+                if (state.gpsWatchId) navigator.geolocation.clearWatch(state.gpsWatchId);
+                state.gpsWatchId = navigator.geolocation.watchPosition(
+                    (position) => {
+                        const { latitude, longitude } = position.coords;
+                        state.currentLat = latitude;
+                        state.currentLng = longitude;
+                        gpsCoordsDisplay.textContent = `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+                        if (!state.gpsReferenceSet) setGPSReference(latitude, longitude);
+                    },
+                    () => {},
+                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 2000 }
+                );
+            }
+
+            function setGPSReference(lat, lng) {
+                if (state.gpsReferenceSet) return;
+                state.gpsReference = { lat, lng };
+                state.gpsReferenceSet = true;
+                state.gpsReferencePosition.set(0, 0, 0);
+                gpsStatus.classList.add('active');
+                gpsCoordsDisplay.textContent = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+                if (!state.pendingObjectsProcessed) processPendingObjects();
+            }
+
+            // ============================================================
+            // THREE.JS
+            // ============================================================
+            function initThreeJS() {
+                scene = new THREE.Scene();
+                scene.background = null;
+
+                const aspect = window.innerWidth / window.innerHeight;
+                camera = new THREE.PerspectiveCamera(60, aspect, 0.01, 1000);
+                camera.position.set(0, 0, 0);
+                camera.lookAt(0, 0, -1);
+
+                renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                renderer.shadowMap.enabled = true;
+                renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+                renderer.setClearColor(0x000000, 0);
+                renderer.toneMapping = THREE.ACESFilmicToneMapping;
+                renderer.toneMappingExposure = 1.0;
+
+                renderer.domElement.style.position = 'absolute';
+                renderer.domElement.style.top = '0';
+                renderer.domElement.style.left = '0';
+                renderer.domElement.style.zIndex = '3';
+                renderer.domElement.style.pointerEvents = 'auto';
+                renderer.domElement.style.touchAction = 'none';
+                container.appendChild(renderer.domElement);
+
+                // Configurar canvas de oclusión
+                occlusionCanvas.width = window.innerWidth;
+                occlusionCanvas.height = window.innerHeight;
+                occlusionCanvas.style.position = 'absolute';
+                occlusionCanvas.style.top = '0';
+                occlusionCanvas.style.left = '0';
+                occlusionCanvas.style.width = '100%';
+                occlusionCanvas.style.height = '100%';
+                occlusionCanvas.style.zIndex = '2';
+                occlusionCanvas.style.pointerEvents = 'none';
+                state.occlusionCanvas = occlusionCanvas;
+                state.occlusionCtx = occlusionCanvas.getContext('2d');
+
+                gltfLoader = new THREE.GLTFLoader();
+
+                const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+                scene.add(ambientLight);
+
+                const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+                dirLight.position.set(5, 10, 7);
+                dirLight.castShadow = true;
+                scene.add(dirLight);
+
+                const fillLight = new THREE.DirectionalLight(0x4a7cf7, 0.4);
+                fillLight.position.set(-5, 0, 5);
+                scene.add(fillLight);
+
+                const pointLight = new THREE.PointLight(0x6c5ce7, 0.5, 10);
+                pointLight.position.set(0, 3, 0);
+                scene.add(pointLight);
+
+                handleResize();
+                startDeviceOrientation();
+                setupInteraction();
+                initMediaPipe();
+            }
+
+            function startDeviceOrientation() {
+                if (window.DeviceOrientationEvent) {
+                    if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                        DeviceOrientationEvent.requestPermission()
+                            .then(response => {
+                                if (response === 'granted') {
+                                    window.addEventListener('deviceorientation', handleOrientation);
+                                    state.isTrackingOrientation = true;
+                                }
+                            })
+                            .catch(console.error);
+                    } else {
+                        window.addEventListener('deviceorientation', handleOrientation);
+                        state.isTrackingOrientation = true;
+                    }
+                }
+            }
+
+            function handleOrientation(event) {
+                state.deviceOrientation.alpha = event.alpha || 0;
+                state.deviceOrientation.beta = event.beta || 0;
+                state.deviceOrientation.gamma = event.gamma || 0;
+            }
+
+            // ============================================================
+            // MEDIAPIPE - DETECCIÓN DE MANOS
+            // ============================================================
+            function initMediaPipe() {
+                console.log('📷 Inicializando MediaPipe Hands...');
+
+                const hands = new Hands({
+                    locateFile: (file) => {
+                        return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+                    }
+                });
+
+                hands.setOptions({
+                    maxNumHands: 2,
+                    modelComplexity: 1,
+                    minDetectionConfidence: 0.7,
+                    minTrackingConfidence: 0.6
+                });
+
+                hands.onResults((results) => {
+                    if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                        state.isHandDetected = true;
+                        state.handLandmarks = results.multiHandLandmarks;
+                        processHandOcclusion(results.multiHandLandmarks);
+                    } else {
+                        state.isHandDetected = false;
+                        state.handLandmarks = null;
+                        state.occludedObjects.clear();
+                        state.occlusionCanvas.classList.remove('active');
+                        occlusionIndicator.classList.remove('active');
+                        arStatusDot.className = 'dot';
+                        updateObjectsList();
+                    }
+                });
+
+                // Usar un video oculto para MediaPipe
+                const video = document.createElement('video');
+                video.style.display = 'none';
+                document.body.appendChild(video);
+
+                // Usar el stream de la cámara del servidor
+                // En lugar de abrir otra cámara, usamos el stream existente
+                // pero MediaPipe necesita acceso directo a la cámara
+                // Esta es una solución que usa la cámara directamente para MediaPipe
+                // y el stream del servidor para la visualización AR
+
+                // Intentar usar la cámara directamente para MediaPipe
+                if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                    navigator.mediaDevices.getUserMedia({
+                        video: { width: 640, height: 480, facingMode: 'environment' }
+                    }).then((stream) => {
+                        video.srcObject = stream;
+                        video.play();
+                        
+                        const camera = new Camera(video, {
+                            onFrame: async () => {
+                                try {
+                                    await hands.send({ image: video });
+                                } catch (e) {
+                                    // Ignorar errores de frame
+                                }
+                            },
+                            width: 640,
+                            height: 480
+                        });
+                        camera.start();
+                        state.mediaPipeReady = true;
+                        console.log('✅ MediaPipe Hands iniciado correctamente');
+                    }).catch((err) => {
+                        console.warn('⚠️ No se pudo acceder a la cámara para MediaPipe:', err);
+                        // Intentar con la cámara trasera
+                        navigator.mediaDevices.getUserMedia({
+                            video: { width: 640, height: 480, facingMode: 'user' }
+                        }).then((stream) => {
+                            video.srcObject = stream;
+                            video.play();
+                            const camera = new Camera(video, {
+                                onFrame: async () => {
+                                    try {
+                                        await hands.send({ image: video });
+                                    } catch (e) {}
+                                },
+                                width: 640,
+                                height: 480
+                            });
+                            camera.start();
+                            state.mediaPipeReady = true;
+                            console.log('✅ MediaPipe Hands iniciado (cámara frontal)');
+                        }).catch((err2) => {
+                            console.warn('⚠️ No se pudo iniciar MediaPipe:', err2);
+                            showToast('⚠️ Oclusión no disponible - sin acceso a cámara', 'error');
+                        });
+                    });
+                } else {
+                    console.warn('⚠️ getUserMedia no soportado');
+                    showToast('⚠️ Oclusión no disponible', 'error');
+                }
+            }
+
+            // ============================================================
+            // PROCESAR OCLUSIÓN CON MEDIAPIPE
+            // ============================================================
+            function processHandOcclusion(landmarks) {
+                if (!state.occlusionEnabled || !state.fixedObjects.length) {
+                    state.occlusionCanvas.classList.remove('active');
+                    return;
+                }
+
+                const ctx = state.occlusionCtx;
+                const canvas = state.occlusionCanvas;
+                const width = canvas.width;
+                const height = canvas.height;
+
+                ctx.clearRect(0, 0, width, height);
+
+                landmarks.forEach((handLandmarks) => {
+                    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                    const points = [];
+
+                    handLandmarks.forEach((lm) => {
+                        const x = lm.x * width;
+                        const y = lm.y * height;
+                        const z = lm.z;
+                        points.push({ x, y, z });
+                        if (x < minX) minX = x;
+                        if (y < minY) minY = y;
+                        if (x > maxX) maxX = x;
+                        if (y > maxY) maxY = y;
+                    });
+
+                    const handWidth = maxX - minX;
+                    const handHeight = maxY - minY;
+                    const avgDepth = points.reduce((sum, p) => sum + p.z, 0) / points.length;
+
+                    state.fixedObjects.forEach((obj) => {
+                        if (!obj.mesh) return;
+                        
+                        const objPos = obj.mesh.position.clone();
+                        const objScreenPos = objPos.clone().project(camera);
+                        const objX = (objScreenPos.x * 0.5 + 0.5) * width;
+                        const objY = (-objScreenPos.y * 0.5 + 0.5) * height;
+                        const objDepth = objScreenPos.z;
+
+                        const margin = 1.3;
+                        const insideHand = (
+                            objX > minX * margin && objX < maxX / margin &&
+                            objY > minY * margin && objY < maxY / margin
+                        );
+
+                        const handDepthNDC = avgDepth * 2 - 1;
+                        const isHandCloser = handDepthNDC > objDepth;
+                        const handSize = Math.max(handWidth, handHeight);
+                        const objScreenSize = Math.abs(objScreenPos.z) * 0.3;
+                        const isHandBigEnough = handSize > objScreenSize * 0.2;
+
+                        if (insideHand && isHandCloser && isHandBigEnough) {
+                            state.occludedObjects.add(obj.id);
+                            
+                            // Dibujar máscara de oclusión
+                            ctx.beginPath();
+                            ctx.ellipse(
+                                (minX + maxX) / 2,
+                                (minY + maxY) / 2,
+                                handWidth / 2,
+                                handHeight / 2,
+                                0, 0, Math.PI * 2
+                            );
+                            ctx.fillStyle = 'rgba(0, 0, 0, 1)';
+                            ctx.fill();
+                            
+                            // Dibujar dedos para mejor precisión
+                            const fingerTips = [4, 8, 12, 16, 20];
+                            fingerTips.forEach((idx) => {
+                                const tip = handLandmarks[idx];
+                                const tipX = tip.x * width;
+                                const tipY = tip.y * height;
+                                ctx.beginPath();
+                                ctx.arc(tipX, tipY, handWidth * 0.06, 0, Math.PI * 2);
+                                ctx.fill();
+                            });
+
+                            // Conexiones de los dedos
+                            const connections = [
+                                [0, 1], [1, 2], [2, 3], [3, 4],
+                                [0, 5], [5, 6], [6, 7], [7, 8],
+                                [0, 9], [9, 10], [10, 11], [11, 12],
+                                [0, 13], [13, 14], [14, 15], [15, 16],
+                                [0, 17], [17, 18], [18, 19], [19, 20]
+                            ];
+                            connections.forEach(([i, j]) => {
+                                const p1 = handLandmarks[i];
+                                const p2 = handLandmarks[j];
+                                ctx.beginPath();
+                                ctx.moveTo(p1.x * width, p1.y * height);
+                                ctx.lineTo(p2.x * width, p2.y * height);
+                                ctx.strokeStyle = 'rgba(0, 0, 0, 1)';
+                                ctx.lineWidth = handWidth * 0.08;
+                                ctx.stroke();
+                            });
+                        }
+                    });
+                });
+
+                if (state.occludedObjects.size > 0) {
+                    state.occlusionCanvas.classList.add('active');
+                    occlusionIndicator.classList.add('active');
+                    occlusionStatus.textContent = `${state.occludedObjects.size} objeto(s) oculto(s)`;
+                    arStatusDot.className = 'dot occlusion';
+                } else {
+                    state.occlusionCanvas.classList.remove('active');
+                    occlusionIndicator.classList.remove('active');
+                    arStatusDot.className = 'dot';
+                }
+
+                updateObjectsList();
+            }
+
+            // ============================================================
+            // INTERACCIÓN CON EL CURSOR
+            // ============================================================
+            function setupInteraction() {
+                const canvas = renderer.domElement;
+                canvas.addEventListener('mousedown', onPointerDown);
+                canvas.addEventListener('mousemove', onPointerMove);
+                canvas.addEventListener('mouseup', onPointerUp);
+                canvas.addEventListener('mouseleave', onPointerUp);
+                canvas.addEventListener('wheel', onWheel, { passive: false });
+                canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+                canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+                canvas.addEventListener('touchend', onTouchEnd, { passive: false });
+            }
+
+            function getPointerNDC(event) {
+                const rect = renderer.domElement.getBoundingClientRect();
+                return new THREE.Vector2(
+                    ((event.clientX - rect.left) / rect.width) * 2 - 1,
+                    -((event.clientY - rect.top) / rect.height) * 2 + 1
+                );
+            }
+
+            function getPointerNDCFromTouch(touch) {
+                const rect = renderer.domElement.getBoundingClientRect();
+                return new THREE.Vector2(
+                    ((touch.clientX - rect.left) / rect.width) * 2 - 1,
+                    -((touch.clientY - rect.top) / rect.height) * 2 + 1
+                );
+            }
+
+            function getIntersectedObject(ndc) {
+                state.raycaster.setFromCamera(ndc, camera);
+                const intersects = state.raycaster.intersectObjects(state.intersectableObjects, true);
+                if (intersects.length > 0) {
+                    let hit = intersects[0].object;
+                    for (const obj of state.fixedObjects) {
+                        let found = false;
+                        obj.mesh.traverse((child) => { if (child === hit) found = true; });
+                        if (found) return obj;
+                    }
+                }
+                return null;
+            }
+
+            function updateIntersectables() {
+                state.intersectableObjects = [];
+                state.fixedObjects.forEach(obj => {
+                    if (obj.mesh) {
+                        obj.mesh.traverse((child) => {
+                            if (child.isMesh) state.intersectableObjects.push(child);
+                        });
+                    }
+                });
+            }
+
+            // ============================================================
+            // MOVIMIENTO Y ROTACIÓN CON EL MOUSE
+            // ============================================================
+            function onPointerDown(event) {
+                if (event.button !== 0) return;
+                const ndc = getPointerNDC(event);
+                state.mouse.copy(ndc);
+                state.isPointerDown = true;
+
+                const obj = getIntersectedObject(ndc);
+                if (obj) {
+                    selectObject(obj);
+                    state.isDragging = true;
+                    state.isRotating = event.ctrlKey || event.metaKey;
+                    state.dragStartMouse.copy(ndc);
+                    state.dragStartPos.copy(obj.mesh.position);
+                    state.dragStartRot.copy(obj.mesh.rotation);
+                    state.dragStartWorld.copy(obj.mesh.position);
+                    
+                    const camDir = new THREE.Vector3();
+                    camera.getWorldDirection(camDir);
+                    dragPlaneNormal.copy(camDir);
+                    selectionPlane.setFromNormalAndCoplanarPoint(dragPlaneNormal, obj.mesh.position);
+                } else {
+                    deselectObject();
+                }
+            }
+
+            function onPointerMove(event) {
+                const ndc = getPointerNDC(event);
+                state.mouse.copy(ndc);
+
+                if (state.isDragging && state.selectedObject) {
+                    if (state.isRotating) {
+                        const deltaX = (ndc.x - state.dragStartMouse.x) * 6;
+                        const deltaY = (ndc.y - state.dragStartMouse.y) * 6;
+                        state.selectedObject.mesh.rotation.x = state.dragStartRot.x + deltaY * 0.5;
+                        state.selectedObject.mesh.rotation.y = state.dragStartRot.y + deltaX;
+                        updateControlsFromObject();
+                    } else {
+                        state.raycaster.setFromCamera(ndc, camera);
+                        const intersect = new THREE.Vector3();
+                        const planeIntersect = state.raycaster.ray.intersectPlane(selectionPlane, intersect);
+                        if (intersect) {
+                            const targetY = state.dragStartWorld.y;
+                            state.selectedObject.mesh.position.copy(intersect);
+                            state.selectedObject.mesh.position.y = targetY;
+                            state.selectedObject.anchorWorldPosition.copy(state.selectedObject.mesh.position);
+                            state.selectedObject.position.copy(state.selectedObject.mesh.position);
+                            updateControlsFromObject();
+                        }
+                    }
+                } else {
+                    const obj = getIntersectedObject(ndc);
+                    renderer.domElement.style.cursor = obj ? 'pointer' : 'default';
+                }
+            }
+
+            function onPointerUp() {
+                if (state.isDragging) {
+                    state.isDragging = false;
+                    state.isRotating = false;
+                    renderer.domElement.style.cursor = 'default';
+                }
+                state.isPointerDown = false;
+            }
+
+            function onWheel(event) {
+                if (state.selectedObject) {
+                    const delta = event.deltaY > 0 ? -0.05 : 0.05;
+                    const newScale = Math.max(0.1, Math.min(3, state.selectedObject.scale + delta));
+                    state.selectedObject.scale = newScale;
+                    state.selectedObject.mesh.scale.set(newScale, newScale, newScale);
+                    updateControlsFromObject();
+                    event.preventDefault();
+                }
+            }
+
+            let lastTouchDist = 0;
+
+            function onTouchStart(event) {
+                event.preventDefault();
+                const touch = event.touches[0];
+                if (!touch) return;
+                const ndc = getPointerNDCFromTouch(touch);
+                state.mouse.copy(ndc);
+
+                if (event.touches.length === 1) {
+                    const obj = getIntersectedObject(ndc);
+                    if (obj) {
+                        selectObject(obj);
+                        state.isDragging = true;
+                        state.isRotating = false;
+                        state.dragStartMouse.copy(ndc);
+                        state.dragStartPos.copy(obj.mesh.position);
+                        state.dragStartRot.copy(obj.mesh.rotation);
+                        state.dragStartWorld.copy(obj.mesh.position);
+                        const camDir = new THREE.Vector3();
+                        camera.getWorldDirection(camDir);
+                        dragPlaneNormal.copy(camDir);
+                        selectionPlane.setFromNormalAndCoplanarPoint(dragPlaneNormal, obj.mesh.position);
+                    } else {
+                        deselectObject();
+                    }
+                } else if (event.touches.length === 2) {
+                    const touch1 = event.touches[0];
+                    const touch2 = event.touches[1];
+                    const dx = touch1.clientX - touch2.clientX;
+                    const dy = touch1.clientY - touch2.clientY;
+                    lastTouchDist = Math.sqrt(dx*dx + dy*dy);
+                }
+            }
+
+            function onTouchMove(event) {
+                event.preventDefault();
+                const touch = event.touches[0];
+                if (!touch) return;
+                const ndc = getPointerNDCFromTouch(touch);
+                state.mouse.copy(ndc);
+
+                if (event.touches.length === 1 && state.isDragging && state.selectedObject) {
+                    state.raycaster.setFromCamera(ndc, camera);
+                    const intersect = new THREE.Vector3();
+                    const planeIntersect = state.raycaster.ray.intersectPlane(selectionPlane, intersect);
+                    if (intersect) {
+                        const targetY = state.dragStartWorld.y;
+                        state.selectedObject.mesh.position.copy(intersect);
+                        state.selectedObject.mesh.position.y = targetY;
+                        state.selectedObject.anchorWorldPosition.copy(state.selectedObject.mesh.position);
+                        state.selectedObject.position.copy(state.selectedObject.mesh.position);
+                        updateControlsFromObject();
+                    }
+                } else if (event.touches.length === 2 && state.selectedObject) {
+                    const touch1 = event.touches[0];
+                    const touch2 = event.touches[1];
+                    const dx = touch1.clientX - touch2.clientX;
+                    const dy = touch1.clientY - touch2.clientY;
+                    const dist = Math.sqrt(dx*dx + dy*dy);
+                    if (lastTouchDist > 0) {
+                        const deltaScale = (dist - lastTouchDist) / 200;
+                        const newScale = Math.max(0.1, Math.min(3, state.selectedObject.scale + deltaScale));
+                        state.selectedObject.scale = newScale;
+                        state.selectedObject.mesh.scale.set(newScale, newScale, newScale);
+                        updateControlsFromObject();
+                    }
+                    lastTouchDist = dist;
+                }
+            }
+
+            function onTouchEnd() {
+                state.isDragging = false;
+                state.isRotating = false;
+                lastTouchDist = 0;
+            }
+
+            // ============================================================
+            // SELECCIÓN DE OBJETOS
+            // ============================================================
+            function selectObject(obj) {
+                if (state.selectedObject) deselectObject();
+                state.selectedObject = obj;
+                obj.isSelected = true;
+                updateObjectsList();
+                objectHighlight.classList.add('active');
+                updateHighlightPosition();
+                updateControlsFromObject();
+            }
+
+            function deselectObject() {
+                if (state.selectedObject) {
+                    state.selectedObject.isSelected = false;
+                    state.selectedObject = null;
+                    document.querySelectorAll('.object-item').forEach(el => el.classList.remove('selected'));
+                    objectHighlight.classList.remove('active');
+                }
+            }
+
+            function updateHighlightPosition() {
+                if (!state.selectedObject || !state.selectedObject.mesh) return;
+                const pos = state.selectedObject.mesh.position.clone();
+                const vector = pos.clone().project(camera);
+                const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
+                const y = (-vector.y * 0.5 + 0.5) * window.innerHeight;
+                const dist = camera.position.distanceTo(pos);
+                const size = Math.max(40, Math.min(120, 150 / Math.max(0.5, dist)));
+                objectHighlight.style.left = (x - size/2) + 'px';
+                objectHighlight.style.top = (y - size/2) + 'px';
+                objectHighlight.style.width = size + 'px';
+                objectHighlight.style.height = size + 'px';
+            }
+
+            // ============================================================
+            // CONTROLES
+            // ============================================================
+            function updateControlsFromObject() {
+                if (!state.selectedObject) return;
+                state.isUpdatingControls = true;
+                const pos = state.selectedObject.mesh.position;
+                const rot = state.selectedObject.mesh.rotation;
+                const scale = state.selectedObject.scale || 1;
+
+                posX.value = pos.x;
+                posY.value = pos.y;
+                posZ.value = pos.z;
+                posXVal.textContent = pos.x.toFixed(2);
+                posYVal.textContent = pos.y.toFixed(2);
+                posZVal.textContent = pos.z.toFixed(2);
+
+                const rotXDeg = ((rot.x * 180 / Math.PI) % 360 + 360) % 360;
+                const rotYDeg = ((rot.y * 180 / Math.PI) % 360 + 360) % 360;
+                const rotZDeg = ((rot.z * 180 / Math.PI) % 360 + 360) % 360;
+                
+                rotX.value = rotXDeg > 180 ? rotXDeg - 360 : rotXDeg;
+                rotY.value = rotYDeg > 180 ? rotYDeg - 360 : rotYDeg;
+                rotZ.value = rotZDeg > 180 ? rotZDeg - 360 : rotZDeg;
+                rotXVal.textContent = (rotX.value * 1).toFixed(0) + '°';
+                rotYVal.textContent = (rotY.value * 1).toFixed(0) + '°';
+                rotZVal.textContent = (rotZ.value * 1).toFixed(0) + '°';
+
+                scaleCtrl.value = scale;
+                scaleVal.textContent = scale.toFixed(2);
+
+                state.isUpdatingControls = false;
+            }
+
+            function updateObjectFromControls() {
+                if (!state.selectedObject || state.isUpdatingControls) return;
+                
+                const x = parseFloat(posX.value);
+                const y = parseFloat(posY.value);
+                const z = parseFloat(posZ.value);
+                const rx = parseFloat(rotX.value) * Math.PI / 180;
+                const ry = parseFloat(rotY.value) * Math.PI / 180;
+                const rz = parseFloat(rotZ.value) * Math.PI / 180;
+                const s = parseFloat(scaleCtrl.value);
+
+                state.selectedObject.mesh.position.set(x, y, z);
+                state.selectedObject.anchorWorldPosition.set(x, y, z);
+                state.selectedObject.position.set(x, y, z);
+                state.selectedObject.mesh.rotation.set(rx, ry, rz);
+                state.selectedObject.scale = s;
+                state.selectedObject.mesh.scale.set(s, s, s);
+
+                posXVal.textContent = x.toFixed(2);
+                posYVal.textContent = y.toFixed(2);
+                posZVal.textContent = z.toFixed(2);
+                rotXVal.textContent = (rx * 180 / Math.PI).toFixed(0) + '°';
+                rotYVal.textContent = (ry * 180 / Math.PI).toFixed(0) + '°';
+                rotZVal.textContent = (rz * 180 / Math.PI).toFixed(0) + '°';
+                scaleVal.textContent = s.toFixed(2);
+            }
+
+            posX.addEventListener('input', updateObjectFromControls);
+            posY.addEventListener('input', updateObjectFromControls);
+            posZ.addEventListener('input', updateObjectFromControls);
+            rotX.addEventListener('input', updateObjectFromControls);
+            rotY.addEventListener('input', updateObjectFromControls);
+            rotZ.addEventListener('input', updateObjectFromControls);
+            scaleCtrl.addEventListener('input', updateObjectFromControls);
+
+            // ============================================================
+            // CÁMARA
+            // ============================================================
+            function iniciarCamaraServidor() {
+                return fetch('/iniciar_camara', { method: 'POST' })
+                    .then(res => res.json())
+                    .catch(() => ({ success: false }));
+            }
+
+            function startCameraStream() {
+                if (state.streamInterval) clearInterval(state.streamInterval);
+                cameraBg.src = '/video_stream?_=' + Date.now();
+                cameraBg.classList.add('active');
+                state.streamInterval = setInterval(() => {
+                    if (state.camaraActiva) {
+                        cameraBg.src = '/video_stream?_=' + Date.now();
+                    }
+                }, 100);
+            }
+
+            function startCameraAsBackground() {
+                iniciarCamaraServidor()
+                    .then(data => {
+                        if (data && data.success) {
+                            state.camaraActiva = true;
+                            startCameraStream();
+                            arStatusDot.className = 'dot';
+                            arStatusText.textContent = 'AR + Cámara';
+                            initARContext();
+                        } else {
+                            fetch('/obtener_configuracion')
+                                .then(res => res.json())
+                                .then(config => {
+                                    if (config && config.camara_activa) {
+                                        state.camaraActiva = true;
+                                        startCameraStream();
+                                        arStatusDot.className = 'dot';
+                                        arStatusText.textContent = 'AR + Cámara';
+                                        initARContext();
+                                    } else {
+                                        initARContext();
+                                    }
+                                })
+                                .catch(() => initARContext());
+                        }
+                    })
+                    .catch(() => initARContext());
+            }
+
+            function initARContext() {
+                state.isARInitialized = true;
+                animate();
+                checkForImportedObjects();
+                checkForLocations();
+            }
+
+            // ============================================================
+            // CREAR OBJETOS 3D
+            // ============================================================
+            function createObject3D(type = 'cube', color = CONFIG.defaultColor, scale = CONFIG.defaultScale) {
+                let geometry, material, mesh;
+                const size = scale;
+
+                switch(type) {
+                    case 'cube':
+                        geometry = new THREE.BoxGeometry(0.3 * size, 0.3 * size, 0.3 * size);
+                        material = new THREE.MeshStandardMaterial({ color, metalness: 0.6, roughness: 0.2, emissive: new THREE.Color(color).multiplyScalar(0.1) });
+                        mesh = new THREE.Mesh(geometry, material);
+                        break;
+                    case 'sphere':
+                        geometry = new THREE.SphereGeometry(0.2 * size, 32, 32);
+                        material = new THREE.MeshStandardMaterial({ color, metalness: 0.3, roughness: 0.4, emissive: new THREE.Color(color).multiplyScalar(0.1) });
+                        mesh = new THREE.Mesh(geometry, material);
+                        break;
+                    case 'pyramid':
+                        geometry = new THREE.ConeGeometry(0.2 * size, 0.35 * size, 4);
+                        material = new THREE.MeshStandardMaterial({ color, metalness: 0.5, roughness: 0.3, emissive: new THREE.Color(color).multiplyScalar(0.1) });
+                        mesh = new THREE.Mesh(geometry, material);
+                        break;
+                    case 'torus':
+                        geometry = new THREE.TorusGeometry(0.15 * size, 0.06 * size, 16, 32);
+                        material = new THREE.MeshStandardMaterial({ color, metalness: 0.7, roughness: 0.2, emissive: new THREE.Color(color).multiplyScalar(0.1) });
+                        mesh = new THREE.Mesh(geometry, material);
+                        break;
+                    case 'diamond':
+                        geometry = new THREE.OctahedronGeometry(0.2 * size);
+                        material = new THREE.MeshStandardMaterial({ color, metalness: 0.9, roughness: 0.1, emissive: new THREE.Color(color).multiplyScalar(0.15), transparent: true, opacity: 0.9 });
+                        mesh = new THREE.Mesh(geometry, material);
+                        break;
+                    default:
+                        geometry = new THREE.BoxGeometry(0.3 * size, 0.3 * size, 0.3 * size);
+                        material = new THREE.MeshStandardMaterial({ color, metalness: 0.6, roughness: 0.2 });
+                        mesh = new THREE.Mesh(geometry, material);
+                }
+
+                mesh.scale.set(1, 1, 1);
+                mesh.castShadow = true;
+                mesh.receiveShadow = true;
+
+                try {
+                    const edges = new THREE.EdgesGeometry(mesh.geometry);
+                    const lineMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.15 });
+                    const wireframe = new THREE.LineSegments(edges, lineMat);
+                    mesh.add(wireframe);
+                } catch (e) {}
+
+                return mesh;
+            }
+
+            function rebuildObjectFromGeometry(geoData, color, scale) {
+                const group = new THREE.Group();
+                if (!geoData || !geoData.geometry || geoData.geometry.length === 0) return null;
+
+                geoData.geometry.forEach((partData) => {
+                    try {
+                        if (!partData.positions || partData.positions.length === 0) return;
+                        const positions = new Float32Array(partData.positions);
+                        const indices = partData.indices && partData.indices.length > 0 
+                            ? new Uint16Array(partData.indices) : null;
+                        const geometry = new THREE.BufferGeometry();
+                        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                        if (indices && indices.length > 0) {
+                            geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+                        }
+                        geometry.computeVertexNormals();
+                        const partColor = partData.color || color || CONFIG.defaultColor;
+                        const material = new THREE.MeshStandardMaterial({
+                            color: partColor,
+                            metalness: partData.metalness || 0.5,
+                            roughness: partData.roughness || 0.3,
+                        });
+                        const childMesh = new THREE.Mesh(geometry, material);
+                        childMesh.castShadow = true;
+                        childMesh.receiveShadow = true;
+                        if (partData.position) {
+                            childMesh.position.set(partData.position.x || 0, partData.position.y || 0, partData.position.z || 0);
+                        }
+                        if (partData.rotation) {
+                            childMesh.rotation.set(partData.rotation.x || 0, partData.rotation.y || 0, partData.rotation.z || 0);
+                        }
+                        if (partData.scale) {
+                            childMesh.scale.set(partData.scale.x || 1, partData.scale.y || 1, partData.scale.z || 1);
+                        }
+                        group.add(childMesh);
+                    } catch (e) {}
+                });
+
+                if (group.children.length === 0) return null;
+                group.scale.set(scale, scale, scale);
+                return group;
+            }
+
+            // ============================================================
+            // FIJAR OBJETO
+            // ============================================================
+            function fixObjectAtCurrentPosition() {
+                if (!state.isARInitialized) {
+                    showToast('Espera a que el AR esté listo', 'error');
+                    return;
+                }
+                if (state.fixedObjects.length >= CONFIG.maxObjects) {
+                    showToast('Límite de objetos alcanzado', 'error');
+                    return;
+                }
+
+                const cameraDirection = new THREE.Vector3();
+                camera.getWorldDirection(cameraDirection);
+                const initialWorldPos = new THREE.Vector3()
+                    .copy(camera.position)
+                    .add(cameraDirection.clone().multiplyScalar(CONFIG.objectDistance));
+                initialWorldPos.y = -0.3;
+
+                const types = ['cube', 'sphere', 'pyramid', 'torus', 'diamond'];
+                const colors = [0x4a7cf7, 0x6c5ce7, 0xfd79a8, 0x00b894, 0xfdcb6e, 0xe17055];
+                const type = types[Math.floor(Math.random() * types.length)];
+                const color = colors[Math.floor(Math.random() * colors.length)];
+                const scale = 0.5 + Math.random() * 0.6;
+
+                const mesh = createObject3D(type, color, scale);
+                scene.add(mesh);
+
+                const objData = {
+                    id: ++state.objectCounter,
+                    mesh: mesh,
+                    type: type,
+                    name: `${type}_${state.objectCounter}`,
+                    color: color,
+                    source: 'AR',
+                    scale: scale,
+                    anchorWorldPosition: initialWorldPos.clone(),
+                    anchorCameraPosition: camera.position.clone(),
+                    anchorCameraQuaternion: camera.quaternion.clone(),
+                    fixedPosition: initialWorldPos.clone(),
+                    position: initialWorldPos.clone(),
+                    isSelected: false,
+                    isOccluded: false,
+                };
+
+                state.fixedObjects.push(objData);
+                state.fixedPositions.set(objData.id, initialWorldPos.clone());
+                updateObjectsList();
+                updateIntersectables();
+                showToast('✅ Objeto fijado', 'success');
+                selectObject(objData);
+            }
+
+            // ============================================================
+            // GPS - CONVERSIÓN
+            // ============================================================
+            function gpsToWorldPosition(lat, lng) {
+                if (!state.gpsReference) return new THREE.Vector3(0, -0.5, -2.5);
+                const R = 6371000;
+                const refLat = state.gpsReference.lat * Math.PI / 180;
+                const refLng = state.gpsReference.lng * Math.PI / 180;
+                const lat2 = lat * Math.PI / 180;
+                const lng2 = lng * Math.PI / 180;
+                const dLat = lat2 - refLat;
+                const dLng = lng2 - refLng;
+                const x = R * dLng * Math.cos((refLat + lat2) / 2);
+                const y = R * dLat;
+                return new THREE.Vector3(x * CONFIG.gpsScale, -0.5, -y * CONFIG.gpsScale);
+            }
+
+            // ============================================================
+            // ELIMINAR OBJETOS
+            // ============================================================
+            function removeObject(id) {
+                const index = state.fixedObjects.findIndex(obj => obj.id === id);
+                if (index === -1) return;
+
+                const obj = state.fixedObjects[index];
+                if (obj === state.selectedObject) deselectObject();
+                
+                if (obj.mesh && obj.mesh.parent) {
+                    obj.mesh.parent.remove(obj.mesh);
+                    obj.mesh.traverse((child) => {
+                        if (child.isMesh) {
+                            child.geometry.dispose();
+                            if (child.material) {
+                                if (Array.isArray(child.material)) {
+                                    child.material.forEach(m => m.dispose());
+                                } else {
+                                    child.material.dispose();
+                                }
+                            }
+                        }
+                    });
+                }
+
+                state.fixedPositions.delete(obj.id);
+                state.occludedObjects.delete(obj.id);
+                state.fixedObjects.splice(index, 1);
+                updateObjectsList();
+                updateIntersectables();
+                showToast('🗑️ Objeto eliminado', 'info');
+            }
+
+            function clearAllObjects() {
+                if (state.fixedObjects.length === 0) return;
+                deselectObject();
+                state.fixedObjects.forEach(obj => {
+                    if (obj.mesh && obj.mesh.parent) {
+                        obj.mesh.parent.remove(obj.mesh);
+                        obj.mesh.traverse((child) => {
+                            if (child.isMesh) {
+                                child.geometry.dispose();
+                                if (child.material) {
+                                    if (Array.isArray(child.material)) {
+                                        child.material.forEach(m => m.dispose());
+                                    } else {
+                                        child.material.dispose();
+                                    }
+                                }
+                            }
+                        });
+                    }
+                });
+                state.fixedObjects = [];
+                state.fixedPositions.clear();
+                state.occludedObjects.clear();
+                state.objectCounter = 0;
+                updateObjectsList();
+                updateIntersectables();
+                state.occlusionCanvas.classList.remove('active');
+                occlusionIndicator.classList.remove('active');
+                arStatusDot.className = 'dot';
+                showToast('🗑️ Limpiado', 'info');
+            }
+
+            function toggleOcclusion() {
+                state.occlusionEnabled = !state.occlusionEnabled;
+                btnToggleOcclusion.style.borderColor = state.occlusionEnabled ? 'rgba(76,217,100,0.3)' : 'rgba(255,107,107,0.3)';
+                btnToggleOcclusion.style.background = state.occlusionEnabled ? 'rgba(76,217,100,0.12)' : 'rgba(255,107,107,0.12)';
+                btnToggleOcclusion.style.color = state.occlusionEnabled ? '#4cd964' : '#ff6b6b';
+                if (!state.occlusionEnabled) {
+                    state.occlusionCanvas.classList.remove('active');
+                    occlusionIndicator.classList.remove('active');
+                    state.occludedObjects.clear();
+                    arStatusDot.className = 'dot';
+                    updateObjectsList();
+                }
+                showToast(state.occlusionEnabled ? '🖐️ Oclusión activada' : '🖐️ Oclusión desactivada', 'info');
+            }
+
+            // ============================================================
+            // LISTA DE OBJETOS
+            // ============================================================
+            function updateObjectsList() {
+                if (state.fixedObjects.length === 0) {
+                    objectsList.innerHTML = `
+                        <div style="text-align:center;color:rgba(255,255,255,0.15);padding:0.8rem;font-size:0.7rem;">
+                            <i class="fas fa-cube" style="display:block;font-size:1.2rem;margin-bottom:0.3rem;"></i>
+                            No hay objetos
+                        </div>
+                    `;
+                    return;
+                }
+
+                objectsList.innerHTML = state.fixedObjects.map(obj => {
+                    const isSelected = obj === state.selectedObject;
+                    const isOccluded = state.occludedObjects.has(obj.id);
+                    return `
+                        <div class="object-item ${isSelected ? 'selected' : ''} ${isOccluded ? 'occluded' : ''}" 
+                             data-id="${obj.id}" onclick="window.selectObjectById(${obj.id})">
+                            <span class="name">${isOccluded ? '🖐️ ' : ''}${obj.name}</span>
+                            <button class="delete-btn" onclick="event.stopPropagation(); window.removeObject(${obj.id})">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            function toggleObjectsPanel() {
+                objectsPanel.classList.toggle('active');
+            }
+
+            // ============================================================
+            // RECIBIR OBJETOS
+            // ============================================================
+            function checkForImportedObjects() {
+                window.addEventListener('message', (event) => {
+                    if (event.data && event.data.type === 'IMPORT_3D_OBJECT') {
+                        import3DObject(event.data.modelData);
+                    }
+                });
+
+                setInterval(() => {
+                    if (state.gpsReferenceSet && !state.pendingObjectsProcessed) {
+                        processPendingObjects();
+                        return;
+                    }
+                    try {
+                        const stored3D = localStorage.getItem('imported_3d_objects');
+                        if (stored3D) {
+                            const objects = JSON.parse(stored3D);
+                            if (objects.length > 0 && !state.pendingObjectsProcessed) {
+                                processPendingObjects();
+                            }
+                        }
+                    } catch (e) {}
+                }, 500);
+            }
+
+            function checkForLocations() {
+                window.addEventListener('message', (event) => {
+                    if (event.data && event.data.type === 'IMPORT_LOCATION') {
+                        importLocation(event.data.locationData);
+                    }
+                });
+
+                setInterval(() => {
+                    try {
+                        const stored = localStorage.getItem('imported_locations');
+                        if (stored && !state.pendingObjectsProcessed) {
+                            const locations = JSON.parse(stored);
+                            if (locations.length > 0) {
+                                locations.forEach(locData => {
+                                    if (!state.importedLocations.includes(locData.id)) {
+                                        importLocation(locData);
+                                        state.importedLocations.push(locData.id);
+                                    }
+                                });
+                                localStorage.removeItem('imported_locations');
+                            }
+                        }
+                    } catch (e) {}
+                }, 1000);
+            }
+
+            function importLocation(locationData) {
+                if (!locationData.lat || !locationData.lng) return;
+                if (!state.gpsReferenceSet) {
+                    state.gpsReference = { lat: locationData.lat, lng: locationData.lng };
+                    state.gpsReferenceSet = true;
+                    if (!state.pendingObjectsProcessed) processPendingObjects();
+                }
+
+                const worldPosition = gpsToWorldPosition(locationData.lat, locationData.lng);
+                worldPosition.z = Math.max(worldPosition.z, -5);
+                worldPosition.z = Math.min(worldPosition.z, -0.5);
+
+                let mesh;
+                if (locationData.objectData) {
+                    const scale = locationData.objectData.scale || 0.8;
+                    const color = parseInt(locationData.objectData.color.replace('#', ''), 16) || 0xffc107;
+                    const type = locationData.objectData.type || 'cube';
+                    mesh = createObject3D(type, color, scale);
+                } else {
+                    mesh = createObject3D('location', 0xffc107, 0.7);
+                }
+
+                mesh.position.copy(worldPosition);
+                mesh.rotation.set(0, 0, 0);
+                scene.add(mesh);
+
+                const objData = {
+                    id: ++state.objectCounter,
+                    mesh: mesh,
+                    type: locationData.objectData ? locationData.objectData.type : 'location',
+                    name: `📍 ${locationData.name || 'Ubicación'}`,
+                    color: locationData.objectData ? parseInt(locationData.objectData.color.replace('#', ''), 16) : 0xffc107,
+                    source: 'GPS',
+                    scale: locationData.objectData ? locationData.objectData.scale : 0.7,
+                    anchorWorldPosition: worldPosition.clone(),
+                    anchorCameraPosition: camera.position.clone(),
+                    anchorCameraQuaternion: camera.quaternion.clone(),
+                    fixedPosition: worldPosition.clone(),
+                    position: worldPosition.clone(),
+                    isSelected: false,
+                    isOccluded: false,
+                };
+
+                state.fixedObjects.push(objData);
+                state.fixedPositions.set(objData.id, worldPosition.clone());
+                updateObjectsList();
+                updateIntersectables();
+                showToast(`📍 ${objData.name} importado`, 'success');
+            }
+
+            function loadGLTFModel(modelData) {
+                if (!gltfLoader) {
+                    showToast('❌ Error cargando modelo', 'error');
+                    return;
+                }
+
+                gltfLoader.load(
+                    modelData.url,
+                    (gltf) => {
+                        try {
+                            const mesh = gltf.scene;
+                            let worldPosition;
+                            if (state.gpsReferenceSet && modelData.gpsCoords) {
+                                worldPosition = gpsToWorldPosition(modelData.gpsCoords.lat, modelData.gpsCoords.lng);
+                                worldPosition.y = -0.5;
+                                worldPosition.z = Math.max(worldPosition.z, -5);
+                                worldPosition.z = Math.min(worldPosition.z, -0.5);
+                            } else {
+                                const direction = new THREE.Vector3();
+                                camera.getWorldDirection(direction);
+                                worldPosition = new THREE.Vector3()
+                                    .copy(camera.position)
+                                    .add(direction.clone().multiplyScalar(CONFIG.objectDistance));
+                                worldPosition.y = -0.3;
+                            }
+                            
+                            const scale = modelData.escala || modelData.scale || 1.0;
+                            mesh.position.copy(worldPosition);
+                            mesh.scale.set(scale, scale, scale);
+
+                            mesh.traverse((child) => {
+                                if (child.isMesh) {
+                                    child.castShadow = true;
+                                    child.receiveShadow = true;
+                                }
+                            });
+
+                            scene.add(mesh);
+
+                            const objData = {
+                                id: ++state.objectCounter,
+                                mesh: mesh,
+                                type: 'custom',
+                                name: modelData.nombre || modelData.name || 'Modelo 3D',
+                                color: 0x4a7cf7,
+                                source: 'Objeto 3D',
+                                imported: true,
+                                isGLTF: true,
+                                scale: scale,
+                                anchorWorldPosition: worldPosition.clone(),
+                                anchorCameraPosition: camera.position.clone(),
+                                anchorCameraQuaternion: camera.quaternion.clone(),
+                                fixedPosition: worldPosition.clone(),
+                                position: worldPosition.clone(),
+                                isSelected: false,
+                                isOccluded: false,
+                            };
+
+                            state.fixedObjects.push(objData);
+                            state.fixedPositions.set(objData.id, worldPosition.clone());
+                            updateObjectsList();
+                            updateIntersectables();
+                            showToast(`🎯 ${objData.name} importado`, 'success');
+                            selectObject(objData);
+                        } catch (e) {
+                            showToast('❌ Error al procesar modelo', 'error');
+                        }
+                    },
+                    null,
+                    (error) => {
+                        showToast('❌ Error al cargar modelo', 'error');
+                    }
+                );
+            }
+
+            function import3DObject(modelData) {
+                if (!modelData) return;
+                if (modelData.isGLTF && modelData.url) {
+                    loadGLTFModel(modelData);
+                    return;
+                }
+
+                const scale = modelData.scale || modelData.escala || 1.0;
+                const color = modelData.color || CONFIG.defaultColor;
+                const type = modelData.type || 'cube';
+                const name = modelData.nombre || modelData.name || `objeto_${state.objectCounter + 1}`;
+
+                const direction = new THREE.Vector3();
+                camera.getWorldDirection(direction);
+                const worldPosition = new THREE.Vector3()
+                    .copy(camera.position)
+                    .add(direction.clone().multiplyScalar(CONFIG.objectDistance));
+                worldPosition.y = -0.3;
+
+                let mesh = null;
+
+                if (modelData.meshData && modelData.meshData.geometry && modelData.meshData.geometry.length > 0) {
+                    const rebuilt = rebuildObjectFromGeometry(modelData.meshData, color, scale);
+                    if (rebuilt) mesh = rebuilt;
+                }
+
+                if (!mesh) {
+                    mesh = createObject3D(type, color, scale);
+                }
+
+                mesh.position.copy(worldPosition);
+                mesh.rotation.set(0, 0, 0);
+                scene.add(mesh);
+
+                const objData = {
+                    id: ++state.objectCounter,
+                    mesh: mesh,
+                    type: type,
+                    name: name,
+                    color: color,
+                    source: 'Objeto 3D',
+                    imported: true,
+                    scale: scale,
+                    anchorWorldPosition: worldPosition.clone(),
+                    anchorCameraPosition: camera.position.clone(),
+                    anchorCameraQuaternion: camera.quaternion.clone(),
+                    fixedPosition: worldPosition.clone(),
+                    position: worldPosition.clone(),
+                    isSelected: false,
+                    isOccluded: false,
+                };
+
+                state.fixedObjects.push(objData);
+                state.fixedPositions.set(objData.id, worldPosition.clone());
+                updateObjectsList();
+                updateIntersectables();
+                showToast(`🎯 ${name} importado`, 'success');
+                selectObject(objData);
+            }
+
+            // ============================================================
+            // FUNCIONES DE UTILIDAD
+            // ============================================================
+            function handleResize() {
+                const width = window.innerWidth;
+                const height = window.innerHeight;
+                if (renderer) renderer.setSize(width, height);
+                if (camera) {
+                    camera.aspect = width / height;
+                    camera.updateProjectionMatrix();
+                }
+                if (state.occlusionCanvas) {
+                    state.occlusionCanvas.width = width;
+                    state.occlusionCanvas.height = height;
+                }
+            }
+
+            window.selectObjectById = function(id) {
+                const obj = state.fixedObjects.find(o => o.id === id);
+                if (obj) selectObject(obj);
+            };
+            window.removeObject = removeObject;
+
+            // ============================================================
+            // ANIMACIÓN
+            // ============================================================
+            function animate() {
+                requestAnimationFrame(animate);
+
+                if (state.isTrackingOrientation) {
+                    const alpha = state.deviceOrientation.alpha || 0;
+                    const beta = state.deviceOrientation.beta || 0;
+                    const gamma = state.deviceOrientation.gamma || 0;
+                    const alphaRad = alpha * Math.PI / 180;
+                    const betaRad = beta * Math.PI / 180;
+                    const gammaRad = gamma * Math.PI / 180;
+                    camera.rotation.order = 'YXZ';
+                    camera.rotation.y = -alphaRad;
+                    camera.rotation.x = betaRad * 0.5;
+                    camera.rotation.z = -gammaRad * 0.5;
+                }
+
+                state.fixedObjects.forEach(obj => {
+                    if (obj === state.selectedObject) return;
+                    if (obj.anchorWorldPosition && obj.mesh) {
+                        const camPosDelta = new THREE.Vector3().subVectors(
+                            camera.position, obj.anchorCameraPosition
+                        );
+                        const newPos = obj.anchorWorldPosition.clone()
+                            .sub(camPosDelta.clone().multiplyScalar(CONFIG.paralajeFactor));
+                        newPos.y = obj.anchorWorldPosition.y;
+                        obj.mesh.position.copy(newPos);
+                        obj.position.copy(newPos);
+                    }
+                    obj.isOccluded = state.occludedObjects.has(obj.id);
+                });
+
+                if (state.selectedObject) {
+                    updateHighlightPosition();
+                }
+
+                renderer.render(scene, camera);
+            }
+
+            // ============================================================
+            // EVENT LISTENERS
+            // ============================================================
+            btnFixObject.addEventListener('click', fixObjectAtCurrentPosition);
+            btnTogglePanel.addEventListener('click', toggleObjectsPanel);
+            btnToggleOcclusion.addEventListener('click', toggleOcclusion);
+            btnClearAll.addEventListener('click', clearAllObjects);
+
+            window.addEventListener('resize', handleResize);
+
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'f' || e.key === 'F') { e.preventDefault(); fixObjectAtCurrentPosition(); }
+                if (e.key === 'l' || e.key === 'L') { toggleObjectsPanel(); }
+                if (e.key === 'c' || e.key === 'C') { clearAllObjects(); }
+                if (e.key === 'o' || e.key === 'O') { toggleOcclusion(); }
+                if (e.key === 'Escape') { deselectObject(); }
+                if (e.key === 'Delete' || e.key === 'Supr') {
+                    if (state.selectedObject) {
+                        removeObject(state.selectedObject.id);
+                    }
+                }
+            });
+
+            // ============================================================
+            // INICIALIZACIÓN
+            // ============================================================
+            console.log('🎬 VisualCam AR v2.10 - Oclusión con MediaPipe');
+
+            initThreeJS();
+            startGPS();
+            setTimeout(startCameraAsBackground, 1000);
+            setTimeout(handleResize, 500);
+
+            setInterval(() => {
+                if (!state.pendingObjectsProcessed) processPendingObjects();
+                try {
+                    const stored = localStorage.getItem('imported_3d_objects');
+                    if (stored) {
+                        const objects = JSON.parse(stored);
+                        if (objects.length > 0) processPendingObjects();
+                    }
+                } catch (e) {}
+            }, 2000);
+
+            setTimeout(() => {
+                setInterval(() => {
+                    try {
+                        const stored = localStorage.getItem('imported_3d_objects');
+                        if (stored) {
+                            const objects = JSON.parse(stored);
+                            if (objects.length > 0 && !state.pendingObjectsProcessed) {
+                                processPendingObjects();
+                            }
+                        }
+                    } catch (e) {}
+                }, 500);
+            }, 100);
+
+        })();
+    </script>
+
+</body>
+</html>

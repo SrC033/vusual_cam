@@ -1,0 +1,1383 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>VisualCam AR - Realidad Aumentada</title>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
+    
+    <style>
+        /* [CSS igual que antes] */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #0a0e17;
+            color: #ffffff;
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+            position: relative;
+        }
+
+        #ar-container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+            background: #000;
+        }
+
+        #cameraBgImage {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            z-index: 1;
+            display: none;
+            background: #000;
+        }
+
+        #cameraBgImage.active {
+            display: block;
+        }
+
+        #ar-container canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 2;
+            pointer-events: none;
+            display: block;
+        }
+
+        .ui-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .header-ar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.8rem 1.5rem;
+            background: linear-gradient(180deg, rgba(0,0,0,0.85) 0%, transparent 100%);
+            pointer-events: auto;
+            flex-wrap: wrap;
+            gap: 0.8rem;
+        }
+
+        .header-ar .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.8rem;
+            text-decoration: none;
+            color: white;
+        }
+
+        .header-ar .logo i { font-size: 1.5rem; color: #4a7cf7; }
+        .header-ar .logo h1 { font-size: 1.2rem; font-weight: 600; color: white; }
+        .header-ar .logo span { font-size: 0.65rem; color: rgba(255,255,255,0.4); display: block; }
+
+        .nav-modules {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            pointer-events: auto;
+            flex-wrap: wrap;
+        }
+
+        .nav-modules a {
+            color: rgba(255, 255, 255, 0.5);
+            text-decoration: none;
+            padding: 0.3rem 0.8rem;
+            border-radius: 50px;
+            font-size: 0.75rem;
+            transition: all 0.3s ease;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            white-space: nowrap;
+        }
+
+        .nav-modules a:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: white;
+            border-color: rgba(255, 255, 255, 0.1);
+        }
+
+        .nav-modules a.active {
+            background: rgba(74, 124, 247, 0.2);
+            color: #4a7cf7;
+            border-color: rgba(74, 124, 247, 0.3);
+            box-shadow: 0 0 20px rgba(74, 124, 247, 0.1);
+        }
+
+        .nav-modules a i { font-size: 0.8rem; }
+        .nav-modules a .badge {
+            background: rgba(255, 107, 107, 0.2);
+            color: #ff6b6b;
+            font-size: 0.55rem;
+            padding: 0.05rem 0.4rem;
+            border-radius: 10px;
+            font-weight: 600;
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.3rem 1rem;
+            background: rgba(0,0,0,0.5);
+            border-radius: 20px;
+            font-size: 0.7rem;
+            color: rgba(255,255,255,0.6);
+            border: 1px solid rgba(255,255,255,0.05);
+            pointer-events: auto;
+        }
+
+        .status-badge .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #4cd964;
+            animation: pulse 2s infinite;
+        }
+
+        .status-badge .dot.inactive {
+            background: #ff6b6b;
+            animation: none;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        .control-panel {
+            position: absolute;
+            bottom: 2rem;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(10, 14, 23, 0.85);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 2rem;
+            padding: 1rem 2rem;
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+            pointer-events: auto;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .control-btn {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            padding: 0.6rem 1.5rem;
+            border: none;
+            border-radius: 50px;
+            font-family: 'Inter', sans-serif;
+            font-weight: 500;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: rgba(255,255,255,0.05);
+            color: rgba(255,255,255,0.7);
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .control-btn:hover {
+            transform: translateY(-2px);
+            background: rgba(255,255,255,0.08);
+            color: white;
+        }
+
+        .control-btn.primary {
+            background: linear-gradient(135deg, #4a7cf7, #6c5ce7);
+            color: white;
+            border: none;
+            box-shadow: 0 8px 24px rgba(74, 124, 247, 0.3);
+        }
+
+        .control-btn.primary:hover {
+            box-shadow: 0 12px 32px rgba(74, 124, 247, 0.4);
+            transform: translateY(-2px);
+        }
+
+        .control-btn.danger {
+            background: rgba(255, 107, 107, 0.15);
+            color: #ff6b6b;
+            border-color: rgba(255, 107, 107, 0.2);
+        }
+
+        .control-btn.danger:hover { background: rgba(255, 107, 107, 0.2); }
+
+        .control-btn.success {
+            background: rgba(76, 217, 100, 0.15);
+            color: #4cd964;
+            border-color: rgba(76, 217, 100, 0.2);
+        }
+
+        .control-btn.success:hover { background: rgba(76, 217, 100, 0.2); }
+
+        .control-btn i { font-size: 1rem; }
+
+        .objects-panel {
+            position: absolute;
+            top: 5rem;
+            right: 1.5rem;
+            background: rgba(10, 14, 23, 0.85);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 1.5rem;
+            padding: 1.2rem;
+            min-width: 220px;
+            max-height: 60vh;
+            overflow-y: auto;
+            pointer-events: auto;
+            display: none;
+        }
+
+        .objects-panel.active { display: block; }
+        .objects-panel::-webkit-scrollbar { width: 4px; }
+        .objects-panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+
+        .objects-panel h3 {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: rgba(255,255,255,0.3);
+            margin-bottom: 1rem;
+        }
+
+        .objects-panel .object-type-badge {
+            font-size: 0.55rem;
+            padding: 0.05rem 0.4rem;
+            border-radius: 10px;
+            margin-left: 0.3rem;
+        }
+
+        .object-type-badge.location { background: rgba(0, 184, 148, 0.2); color: #00b894; }
+        .object-type-badge.object3d { background: rgba(74, 124, 247, 0.2); color: #4a7cf7; }
+        .object-type-badge.ar { background: rgba(108, 92, 231, 0.2); color: #6c5ce7; }
+
+        .object-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.6rem 0.8rem;
+            background: rgba(255,255,255,0.03);
+            border-radius: 12px;
+            margin-bottom: 0.5rem;
+            border: 1px solid rgba(255,255,255,0.03);
+            transition: all 0.3s ease;
+        }
+
+        .object-item:hover { background: rgba(255,255,255,0.05); }
+
+        .object-item .info { display: flex; flex-direction: column; }
+        .object-item .info .name { font-size: 0.85rem; font-weight: 500; color: white; }
+        .object-item .info .coords { font-size: 0.65rem; color: rgba(255,255,255,0.3); font-family: monospace; }
+        .object-item .info .source { font-size: 0.6rem; color: rgba(255,255,255,0.2); }
+
+        .object-item .delete-btn {
+            background: none;
+            border: none;
+            color: rgba(255,107,107,0.4);
+            cursor: pointer;
+            padding: 0.3rem 0.6rem;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+
+        .object-item .delete-btn:hover {
+            color: #ff6b6b;
+            background: rgba(255,107,107,0.1);
+        }
+
+        .coords-display {
+            position: absolute;
+            bottom: 7rem;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.6);
+            backdrop-filter: blur(10px);
+            padding: 0.3rem 1.2rem;
+            border-radius: 20px;
+            font-family: monospace;
+            font-size: 0.7rem;
+            color: rgba(255,255,255,0.3);
+            pointer-events: none;
+            white-space: nowrap;
+        }
+
+        .welcome-message {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            pointer-events: none;
+            z-index: 5;
+        }
+
+        .welcome-message i { font-size: 4rem; color: rgba(74, 124, 247, 0.2); margin-bottom: 1rem; }
+        .welcome-message h2 { font-size: 1.8rem; font-weight: 700; color: rgba(255,255,255,0.1); }
+        .welcome-message p { color: rgba(255,255,255,0.05); font-size: 0.9rem; }
+        .welcome-message.hidden { display: none; }
+
+        .toast {
+            position: fixed;
+            bottom: 6rem;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(10, 14, 23, 0.95);
+            backdrop-filter: blur(20px);
+            padding: 0.8rem 1.5rem;
+            border-radius: 50px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            color: white;
+            font-size: 0.9rem;
+            z-index: 1000;
+            display: none;
+            animation: slideUp 0.3s ease-out;
+            font-family: 'Inter', sans-serif;
+        }
+
+        .toast.show { display: flex; align-items: center; gap: 0.8rem; }
+        .toast.success { border-color: rgba(76, 217, 100, 0.3); }
+        .toast.error { border-color: rgba(255, 107, 107, 0.3); }
+        .toast.info { border-color: rgba(74, 124, 247, 0.3); }
+        .toast i { font-size: 1rem; }
+        .toast.success i { color: #4cd964; }
+        .toast.error i { color: #ff6b6b; }
+        .toast.info i { color: #4a7cf7; }
+
+        @keyframes slideUp {
+            0% { opacity: 0; transform: translateX(-50%) translateY(20px); }
+            100% { opacity: 1; transform: translateX(-50%) translateY(0); }
+        }
+
+        .cam-status-text {
+            position: absolute;
+            bottom: 6rem;
+            left: 50%;
+            transform: translateX(-50%);
+            color: rgba(255,255,255,0.2);
+            font-size: 0.7rem;
+            font-family: monospace;
+            z-index: 15;
+            pointer-events: none;
+            background: rgba(0,0,0,0.3);
+            padding: 0.2rem 1rem;
+            border-radius: 20px;
+            display: none;
+        }
+
+        .cam-status-text.active { display: block; }
+
+        @media (max-width: 1024px) {
+            .nav-modules a span { display: none; }
+            .nav-modules a { padding: 0.3rem 0.6rem; }
+            .header-ar { padding: 0.6rem 1rem; }
+        }
+
+        @media (max-width: 768px) {
+            .control-panel {
+                bottom: 1rem;
+                padding: 0.8rem 1rem;
+                gap: 0.8rem;
+                border-radius: 1.5rem;
+                width: 95%;
+            }
+            .control-btn { padding: 0.4rem 1rem; font-size: 0.75rem; flex: 1; justify-content: center; }
+            .header-ar .logo h1 { font-size: 1rem; }
+            .header-ar .logo span { display: none; }
+            .status-badge { font-size: 0.6rem; padding: 0.2rem 0.8rem; }
+            .objects-panel { right: 0.5rem; top: 4.5rem; min-width: 150px; padding: 1rem; }
+            .toast { bottom: 5rem; font-size: 0.8rem; padding: 0.6rem 1rem; }
+        }
+
+        @media (max-width: 480px) {
+            .control-btn span { display: none; }
+            .control-btn { padding: 0.5rem 0.8rem; }
+            .control-btn i { font-size: 1.2rem; margin: 0; }
+            .nav-modules a i { font-size: 1rem; }
+            .header-ar .logo i { font-size: 1.2rem; }
+            .header-ar .logo h1 { font-size: 0.9rem; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="ar-container">
+        <img id="cameraBgImage" alt="Stream de cámara" />
+    </div>
+
+    <div class="welcome-message" id="welcomeMessage">
+        <i class="fas fa-cube"></i>
+        <h2>Realidad Aumentada</h2>
+        <p id="welcomeText">Activa la cámara para comenzar</p>
+    </div>
+
+    <div class="cam-status-text" id="camStatusText">📷 Conectando a la cámara...</div>
+
+    <div class="ui-overlay">
+        <div class="header-ar">
+            <a href="/" class="logo">
+                <i class="fas fa-cube"></i>
+                <div>
+                    <h1>VisualCam AR</h1>
+                    <span>Realidad Aumentada</span>
+                </div>
+            </a>
+            
+            <div class="nav-modules">
+                <a href="/modulos/main" class="active">
+                    <i class="fas fa-cube"></i>
+                    <span>AR</span>
+                </a>
+                <a href="/modulos/modulos/camara.html">
+                    <i class="fas fa-camera"></i>
+                    <span>Cámara</span>
+                </a>
+                <a href="/modulos/modulos/insertar_objeto.html">
+                    <i class="fas fa-cube"></i>
+                    <span>Objetos 3D</span>
+                    <span class="badge">Nuevo</span>
+                </a>
+                <a href="/modulos/modulos/ubicacion.html">
+                    <i class="fas fa-location-dot"></i>
+                    <span>Ubicación</span>
+                    <span class="badge">Nuevo</span>
+                </a>
+                <a href="/modulos/efectos">
+                    <i class="fas fa-magic"></i>
+                    <span>Efectos</span>
+                </a>
+                <a href="/modulos/historial">
+                    <i class="fas fa-clock-rotate-left"></i>
+                    <span>Historial</span>
+                </a>
+            </div>
+
+            <div class="status-badge">
+                <span class="dot" id="arStatusDot"></span>
+                <span id="arStatusText">AR Activo</span>
+            </div>
+        </div>
+
+        <div class="objects-panel" id="objectsPanel">
+            <h3><i class="fas fa-cubes"></i> Objetos en escena</h3>
+            <div id="objectsList"></div>
+        </div>
+
+        <div class="control-panel">
+            <button class="control-btn primary" id="btnFixObject">
+                <i class="fas fa-thumbtack"></i>
+                <span>Fijar objeto</span>
+            </button>
+            <button class="control-btn" id="btnTogglePanel">
+                <i class="fas fa-list"></i>
+                <span>Lista</span>
+            </button>
+            <button class="control-btn danger" id="btnClearAll">
+                <i class="fas fa-trash"></i>
+                <span>Limpiar</span>
+            </button>
+            <button class="control-btn success" id="btnResetCamera">
+                <i class="fas fa-rotate"></i>
+                <span>Reset</span>
+            </button>
+        </div>
+
+        <div class="coords-display" id="coordsDisplay">
+            📍 X: 0.00 | Y: 0.00 | Z: 0.00
+        </div>
+    </div>
+
+    <div class="toast" id="toast">
+        <i class="fas fa-check-circle"></i>
+        <span id="toastMessage">Mensaje</span>
+    </div>
+
+    <script>
+        (function() {
+            'use strict';
+
+            const CONFIG = {
+                objectDistance: 2.0,
+                maxObjects: 30,
+                defaultColor: 0x4a7cf7,
+                defaultScale: 0.8,
+            };
+
+            const state = {
+                fixedObjects: [],
+                cameraReady: false,
+                isARInitialized: false,
+                objectCounter: 0,
+                camaraActiva: false,
+                importedObjects: [],
+                importedLocations: [],
+                streamInterval: null,
+            };
+
+            // DOM
+            const container = document.getElementById('ar-container');
+            const cameraBg = document.getElementById('cameraBgImage');
+            const welcomeMsg = document.getElementById('welcomeMessage');
+            const welcomeText = document.getElementById('welcomeText');
+            const objectsPanel = document.getElementById('objectsPanel');
+            const objectsList = document.getElementById('objectsList');
+            const coordsDisplay = document.getElementById('coordsDisplay');
+            const arStatusDot = document.getElementById('arStatusDot');
+            const arStatusText = document.getElementById('arStatusText');
+            const camStatusText = document.getElementById('camStatusText');
+            const toast = document.getElementById('toast');
+            const toastMessage = document.getElementById('toastMessage');
+
+            const btnFixObject = document.getElementById('btnFixObject');
+            const btnTogglePanel = document.getElementById('btnTogglePanel');
+            const btnClearAll = document.getElementById('btnClearAll');
+            const btnResetCamera = document.getElementById('btnResetCamera');
+
+            let scene, camera, renderer;
+            let markerRoot;
+            let gltfLoader;
+            let objLoader;
+
+            function showToast(message, type = 'success') {
+                toast.className = `toast show ${type}`;
+                toastMessage.textContent = message;
+                clearTimeout(toast._timeout);
+                toast._timeout = setTimeout(() => {
+                    toast.classList.remove('show');
+                }, 3000);
+            }
+
+            function initThreeJS() {
+                scene = new THREE.Scene();
+                scene.background = null;
+
+                const aspect = window.innerWidth / window.innerHeight;
+                const fov = 60;
+                camera = new THREE.PerspectiveCamera(fov, aspect, 0.1, 1000);
+                camera.position.set(0, 0, 2);
+                camera.lookAt(0, 0, -1);
+
+                renderer = new THREE.WebGLRenderer({ 
+                    antialias: true, 
+                    alpha: true 
+                });
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                renderer.shadowMap.enabled = true;
+                renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+                renderer.setClearColor(0x000000, 0);
+                renderer.toneMapping = THREE.ACESFilmicToneMapping;
+                renderer.toneMappingExposure = 1.0;
+
+                renderer.domElement.style.position = 'absolute';
+                renderer.domElement.style.top = '0';
+                renderer.domElement.style.left = '0';
+                renderer.domElement.style.zIndex = '2';
+                renderer.domElement.style.pointerEvents = 'none';
+                
+                container.appendChild(renderer.domElement);
+
+                markerRoot = new THREE.Group();
+                scene.add(markerRoot);
+
+                gltfLoader = new THREE.GLTFLoader();
+                objLoader = new THREE.OBJLoader();
+
+                const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+                scene.add(ambientLight);
+
+                const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+                dirLight.position.set(5, 10, 7);
+                dirLight.castShadow = true;
+                scene.add(dirLight);
+
+                const fillLight = new THREE.DirectionalLight(0x4a7cf7, 0.4);
+                fillLight.position.set(-5, 0, 5);
+                scene.add(fillLight);
+
+                const pointLight = new THREE.PointLight(0x6c5ce7, 0.5, 10);
+                pointLight.position.set(0, 3, 0);
+                scene.add(pointLight);
+
+                const gridHelper = new THREE.GridHelper(8, 16, 0x4a7cf7, 0x1a2f45);
+                gridHelper.position.y = -0.8;
+                scene.add(gridHelper);
+
+                console.log('✅ Three.js inicializado');
+                handleResize();
+            }
+
+            function iniciarCamaraServidor() {
+                return fetch('/iniciar_camara', { 
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                })
+                .then(res => res.json())
+                .then(data => {
+                    console.log('📷 Respuesta iniciar cámara:', data);
+                    return data;
+                })
+                .catch(err => {
+                    console.error('Error al iniciar cámara:', err);
+                    return { success: false, mensaje: err.message };
+                });
+            }
+
+            function startCameraStream() {
+                if (state.streamInterval) {
+                    clearInterval(state.streamInterval);
+                }
+                
+                cameraBg.src = '/video_stream?_=' + Date.now();
+                cameraBg.classList.add('active');
+                
+                state.streamInterval = setInterval(() => {
+                    if (state.camaraActiva) {
+                        cameraBg.src = '/video_stream?_=' + Date.now();
+                    }
+                }, 100);
+            }
+
+            function startCameraAsBackground() {
+                camStatusText.classList.add('active');
+                camStatusText.textContent = '📷 Iniciando cámara...';
+                
+                iniciarCamaraServidor()
+                    .then(data => {
+                        if (data && data.success) {
+                            state.camaraActiva = true;
+                            startCameraStream();
+                            
+                            camStatusText.textContent = '📷 Cámara activa como fondo';
+                            setTimeout(() => {
+                                camStatusText.classList.remove('active');
+                            }, 3000);
+                            
+                            welcomeMsg.classList.add('hidden');
+                            arStatusDot.className = 'dot';
+                            arStatusText.textContent = 'AR + Cámara';
+                            console.log('📷 Cámara como fondo activada');
+                            initARContext();
+                        } else {
+                            fetch('/obtener_configuracion')
+                                .then(res => res.json())
+                                .then(config => {
+                                    if (config && config.camara_activa) {
+                                        state.camaraActiva = true;
+                                        startCameraStream();
+                                        welcomeMsg.classList.add('hidden');
+                                        arStatusDot.className = 'dot';
+                                        arStatusText.textContent = 'AR + Cámara';
+                                        initARContext();
+                                        camStatusText.classList.remove('active');
+                                    } else {
+                                        camStatusText.textContent = '⏳ No se pudo iniciar la cámara';
+                                        setTimeout(() => {
+                                            camStatusText.classList.remove('active');
+                                        }, 3000);
+                                        initARContext();
+                                    }
+                                })
+                                .catch(() => {
+                                    camStatusText.textContent = '⚠️ Error al conectar con el servidor';
+                                    setTimeout(() => {
+                                        camStatusText.classList.remove('active');
+                                    }, 3000);
+                                    initARContext();
+                                });
+                        }
+                    })
+                    .catch(() => {
+                        initARContext();
+                    });
+            }
+
+            function initARContext() {
+                state.isARInitialized = true;
+                animate();
+                addDemoObjects();
+                checkForImportedObjects();
+                checkForLocations();
+                console.log('✅ AR inicializado');
+            }
+
+            function createObject3D(type = 'cube', color = CONFIG.defaultColor, scale = CONFIG.defaultScale) {
+                let geometry, material, mesh;
+
+                switch(type) {
+                    case 'cube':
+                        geometry = new THREE.BoxGeometry(0.3 * scale, 0.3 * scale, 0.3 * scale);
+                        material = new THREE.MeshStandardMaterial({ color: color, metalness: 0.6, roughness: 0.2, emissive: new THREE.Color(color).multiplyScalar(0.1) });
+                        mesh = new THREE.Mesh(geometry, material);
+                        break;
+                    case 'sphere':
+                        geometry = new THREE.SphereGeometry(0.2 * scale, 32, 32);
+                        material = new THREE.MeshStandardMaterial({ color: color, metalness: 0.3, roughness: 0.4, emissive: new THREE.Color(color).multiplyScalar(0.1) });
+                        mesh = new THREE.Mesh(geometry, material);
+                        break;
+                    case 'pyramid':
+                        geometry = new THREE.ConeGeometry(0.2 * scale, 0.35 * scale, 4);
+                        material = new THREE.MeshStandardMaterial({ color: color, metalness: 0.5, roughness: 0.3, emissive: new THREE.Color(color).multiplyScalar(0.1) });
+                        mesh = new THREE.Mesh(geometry, material);
+                        break;
+                    case 'torus':
+                        geometry = new THREE.TorusGeometry(0.15 * scale, 0.06 * scale, 16, 32);
+                        material = new THREE.MeshStandardMaterial({ color: color, metalness: 0.7, roughness: 0.2, emissive: new THREE.Color(color).multiplyScalar(0.1) });
+                        mesh = new THREE.Mesh(geometry, material);
+                        break;
+                    case 'diamond':
+                        geometry = new THREE.OctahedronGeometry(0.2 * scale);
+                        material = new THREE.MeshStandardMaterial({ color: color, metalness: 0.9, roughness: 0.1, emissive: new THREE.Color(color).multiplyScalar(0.15), transparent: true, opacity: 0.9 });
+                        mesh = new THREE.Mesh(geometry, material);
+                        break;
+                    case 'location':
+                        const group = new THREE.Group();
+                        const sphereGeo = new THREE.SphereGeometry(0.15 * scale, 16, 16);
+                        const sphereMat = new THREE.MeshStandardMaterial({ color: 0x00b894, metalness: 0.3, roughness: 0.4, emissive: new THREE.Color(0x00b894).multiplyScalar(0.2) });
+                        const sphere = new THREE.Mesh(sphereGeo, sphereMat);
+                        sphere.position.y = 0.15 * scale;
+                        group.add(sphere);
+                        const pinGeo = new THREE.ConeGeometry(0.08 * scale, 0.2 * scale, 8);
+                        const pinMat = new THREE.MeshStandardMaterial({ color: 0x00b894, metalness: 0.5, roughness: 0.3 });
+                        const pin = new THREE.Mesh(pinGeo, pinMat);
+                        pin.position.y = -0.05 * scale;
+                        group.add(pin);
+                        const ringGeo = new THREE.TorusGeometry(0.2 * scale, 0.02 * scale, 8, 16);
+                        const ringMat = new THREE.MeshStandardMaterial({ color: 0x00b894, metalness: 0.7, roughness: 0.2, emissive: new THREE.Color(0x00b894).multiplyScalar(0.1) });
+                        const ring = new THREE.Mesh(ringGeo, ringMat);
+                        ring.position.y = 0.15 * scale;
+                        ring.rotation.x = Math.PI / 2;
+                        group.add(ring);
+                        mesh = group;
+                        return mesh;
+                    default:
+                        geometry = new THREE.BoxGeometry(0.3 * scale, 0.3 * scale, 0.3 * scale);
+                        material = new THREE.MeshStandardMaterial({ color: color, metalness: 0.6, roughness: 0.2 });
+                        mesh = new THREE.Mesh(geometry, material);
+                }
+
+                mesh.scale.set(scale, scale, scale);
+                mesh.castShadow = true;
+                mesh.receiveShadow = true;
+
+                const edges = new THREE.EdgesGeometry(mesh.geometry);
+                const lineMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.3 });
+                const wireframe = new THREE.LineSegments(edges, lineMat);
+                mesh.add(wireframe);
+
+                const particleCount = 20;
+                const particleGeo = new THREE.BufferGeometry();
+                const positions = new Float32Array(particleCount * 3);
+                for (let i = 0; i < particleCount * 3; i++) {
+                    positions[i] = (Math.random() - 0.5) * 0.8 * scale;
+                }
+                particleGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                const particleMat = new THREE.PointsMaterial({ color: color, size: 0.02 * scale, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending });
+                const particles = new THREE.Points(particleGeo, particleMat);
+                mesh.add(particles);
+
+                return mesh;
+            }
+
+            function fixObjectAtCurrentPosition() {
+                if (!state.isARInitialized) {
+                    showToast('Espera a que el AR esté listo', 'error');
+                    return;
+                }
+
+                if (state.fixedObjects.length >= CONFIG.maxObjects) {
+                    showToast(`Límite de ${CONFIG.maxObjects} objetos alcanzado`, 'error');
+                    return;
+                }
+
+                const position = new THREE.Vector3(
+                    (Math.random() - 0.5) * 1.5,
+                    (Math.random() - 0.5) * 0.8,
+                    -2.0 + (Math.random() - 0.5) * 0.5
+                );
+
+                const types = ['cube', 'sphere', 'pyramid', 'torus', 'diamond'];
+                const colors = [0x4a7cf7, 0x6c5ce7, 0xfd79a8, 0x00b894, 0xfdcb6e, 0xe17055];
+                const type = types[Math.floor(Math.random() * types.length)];
+                const color = colors[Math.floor(Math.random() * colors.length)];
+                const scale = 0.5 + Math.random() * 0.6;
+
+                const mesh = createObject3D(type, color, scale);
+                mesh.position.copy(position);
+                mesh.rotation.x = (Math.random() - 0.5) * 0.5;
+                mesh.rotation.y = (Math.random() - 0.5) * 0.5;
+                mesh.rotation.z = (Math.random() - 0.5) * 0.5;
+
+                markerRoot.add(mesh);
+
+                const objData = {
+                    id: ++state.objectCounter,
+                    mesh: mesh,
+                    position: position.clone(),
+                    type: type,
+                    name: `${type}_${state.objectCounter}`,
+                    color: color,
+                    source: 'AR',
+                };
+
+                state.fixedObjects.push(objData);
+                updateObjectsList();
+                updateCoordsDisplay(position);
+
+                showToast(`✅ Objeto fijado: ${objData.name}`, 'success');
+            }
+
+            function removeObject(id) {
+                const index = state.fixedObjects.findIndex(obj => obj.id === id);
+                if (index === -1) return;
+
+                const obj = state.fixedObjects[index];
+                if (obj.mesh && obj.mesh.parent) {
+                    obj.mesh.parent.remove(obj.mesh);
+                    obj.mesh.traverse((child) => {
+                        if (child.isMesh) {
+                            child.geometry.dispose();
+                            if (child.material) {
+                                if (Array.isArray(child.material)) {
+                                    child.material.forEach(m => m.dispose());
+                                } else {
+                                    child.material.dispose();
+                                }
+                            }
+                        }
+                    });
+                }
+
+                state.fixedObjects.splice(index, 1);
+                updateObjectsList();
+                showToast(`🗑️ Objeto eliminado`, 'info');
+            }
+
+            function clearAllObjects() {
+                if (state.fixedObjects.length === 0) return;
+                if (!confirm('¿Eliminar todos los objetos?')) return;
+
+                state.fixedObjects.forEach(obj => {
+                    if (obj.mesh && obj.mesh.parent) {
+                        obj.mesh.parent.remove(obj.mesh);
+                        obj.mesh.traverse((child) => {
+                            if (child.isMesh) {
+                                child.geometry.dispose();
+                                if (child.material) {
+                                    if (Array.isArray(child.material)) {
+                                        child.material.forEach(m => m.dispose());
+                                    } else {
+                                        child.material.dispose();
+                                    }
+                                }
+                            }
+                        });
+                    }
+                });
+
+                state.fixedObjects = [];
+                state.objectCounter = 0;
+                updateObjectsList();
+                showToast('🗑️ Todos los objetos eliminados', 'info');
+            }
+
+            function updateObjectsList() {
+                if (state.fixedObjects.length === 0) {
+                    objectsList.innerHTML = `
+                        <div style="text-align:center;color:rgba(255,255,255,0.2);padding:1rem 0;font-size:0.8rem;">
+                            <i class="fas fa-plus-circle" style="display:block;font-size:1.5rem;margin-bottom:0.5rem;"></i>
+                            Fija objetos o importa desde otros módulos
+                        </div>
+                    `;
+                    return;
+                }
+
+                objectsList.innerHTML = state.fixedObjects.map(obj => {
+                    const sourceIcon = obj.source === 'GPS' ? '📍' : obj.source === 'Objeto 3D' ? '🎯' : '🔷';
+                    const typeClass = obj.source === 'GPS' ? 'location' : obj.source === 'Objeto 3D' ? 'object3d' : 'ar';
+                    return `
+                        <div class="object-item">
+                            <div class="info">
+                                <span class="name">
+                                    ${sourceIcon} ${obj.name}
+                                    <span class="object-type-badge ${typeClass}">${obj.source || 'AR'}</span>
+                                </span>
+                                <span class="coords">
+                                    X: ${obj.position.x.toFixed(2)} | Y: ${obj.position.y.toFixed(2)} | Z: ${obj.position.z.toFixed(2)}
+                                </span>
+                            </div>
+                            <button class="delete-btn" onclick="window.removeObject(${obj.id})">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            function updateCoordsDisplay(position) {
+                if (position) {
+                    coordsDisplay.textContent = `📍 X: ${position.x.toFixed(2)} | Y: ${position.y.toFixed(2)} | Z: ${position.z.toFixed(2)}`;
+                }
+            }
+
+            function toggleObjectsPanel() {
+                objectsPanel.classList.toggle('active');
+            }
+
+            // ============================================================
+            // RECIBIR OBJETOS 3D DESDE insertar_objeto.html
+            // ============================================================
+            function checkForImportedObjects() {
+                window.addEventListener('message', (event) => {
+                    if (event.data && event.data.type === 'IMPORT_3D_OBJECT') {
+                        console.log('🎯 Objeto recibido por postMessage:', event.data.modelData);
+                        import3DObject(event.data.modelData);
+                    }
+                    if (event.data && event.data.type === 'IMPORT_GLTF_OBJECT') {
+                        console.log('🎯 Modelo GLTF recibido:', event.data);
+                        importGLTFObject(event.data.modelData);
+                    }
+                });
+
+                setInterval(() => {
+                    try {
+                        const stored = localStorage.getItem('imported_3d_objects');
+                        if (stored) {
+                            const objects = JSON.parse(stored);
+                            if (objects.length > 0) {
+                                console.log('📦 Objetos encontrados en localStorage:', objects);
+                                objects.forEach(objData => {
+                                    if (!state.importedObjects.includes(objData.id)) {
+                                        import3DObject(objData);
+                                        state.importedObjects.push(objData.id);
+                                    }
+                                });
+                                localStorage.removeItem('imported_3d_objects');
+                            }
+                        }
+
+                        const gltfStored = localStorage.getItem('imported_gltf_models');
+                        if (gltfStored) {
+                            const models = JSON.parse(gltfStored);
+                            if (models.length > 0) {
+                                models.forEach(modelData => {
+                                    if (!state.importedObjects.includes(modelData.id)) {
+                                        importGLTFObject(modelData);
+                                        state.importedObjects.push(modelData.id);
+                                    }
+                                });
+                                localStorage.removeItem('imported_gltf_models');
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('Error al leer objetos importados:', e);
+                    }
+                }, 1000);
+            }
+
+            function importGLTFObject(modelData) {
+                console.log('🔄 Importando modelo GLTF:', modelData);
+                if (!modelData.url) {
+                    console.warn('❌ No hay URL para el modelo GLTF');
+                    return;
+                }
+
+                showToast('📦 Cargando modelo 3D...', 'info');
+
+                const loader = modelData.format === 'OBJ' ? objLoader : gltfLoader;
+
+                loader.load(
+                    modelData.url,
+                    (result) => {
+                        let mesh;
+                        if (modelData.format === 'OBJ') {
+                            mesh = result;
+                        } else {
+                            mesh = result.scene;
+                        }
+
+                        const position = new THREE.Vector3(
+                            (Math.random() - 0.5) * 1.5,
+                            (Math.random() - 0.5) * 0.8 - 0.2,
+                            -2.0 - Math.random() * 0.5
+                        );
+                        mesh.position.copy(position);
+                        mesh.scale.set(modelData.escala || 1, modelData.escala || 1, modelData.escala || 1);
+                        mesh.rotation.x = (Math.random() - 0.5) * 0.5;
+                        mesh.rotation.y = (Math.random() - 0.5) * 0.5;
+                        mesh.rotation.z = (Math.random() - 0.5) * 0.5;
+
+                        mesh.traverse((child) => {
+                            if (child.isMesh) {
+                                child.castShadow = true;
+                                child.receiveShadow = true;
+                            }
+                        });
+
+                        markerRoot.add(mesh);
+
+                        const objData = {
+                            id: ++state.objectCounter,
+                            mesh: mesh,
+                            position: position.clone(),
+                            type: 'custom',
+                            name: modelData.nombre || 'Modelo 3D',
+                            color: parseInt(modelData.color ? modelData.color.replace('#', '') : '4a7cf7', 16) || 0x4a7cf7,
+                            source: 'Objeto 3D',
+                            imported: true,
+                            isGLTF: true,
+                            scale: modelData.escala || 1,
+                        };
+
+                        state.fixedObjects.push(objData);
+                        updateObjectsList();
+                        updateCoordsDisplay(position);
+
+                        showToast('🎯 Modelo 3D importado: ' + objData.name, 'success');
+                        console.log('✅ Modelo GLTF importado:', objData);
+                    },
+                    (progress) => {
+                        console.log('📦 Cargando modelo:', (progress.loaded / progress.total * 100) + '%');
+                    },
+                    (error) => {
+                        console.error('❌ Error al cargar modelo GLTF:', error);
+                        showToast('❌ Error al cargar modelo 3D', 'error');
+                        // Fallback a cubo genérico
+                        import3DObject({
+                            name: modelData.nombre || 'Modelo 3D',
+                            type: 'custom',
+                            color: parseInt(modelData.color ? modelData.color.replace('#', '') : '4a7cf7', 16) || 0x4a7cf7,
+                            scale: modelData.escala || 1
+                        });
+                    }
+                );
+            }
+
+            function import3DObject(modelData) {
+                console.log('🎯 Importando objeto 3D:', modelData);
+
+                const scale = modelData.scale || 1.0;
+                const color = modelData.color || 0x4a7cf7;
+                const type = modelData.type || 'custom';
+                const name = modelData.name || `importado_${state.objectCounter + 1}`;
+
+                let geometry;
+                switch(type) {
+                    case 'cube':
+                        geometry = new THREE.BoxGeometry(0.3 * scale, 0.3 * scale, 0.3 * scale);
+                        break;
+                    case 'sphere':
+                        geometry = new THREE.SphereGeometry(0.2 * scale, 32, 32);
+                        break;
+                    case 'pyramid':
+                        geometry = new THREE.ConeGeometry(0.2 * scale, 0.35 * scale, 4);
+                        break;
+                    case 'torus':
+                        geometry = new THREE.TorusGeometry(0.15 * scale, 0.06 * scale, 16, 32);
+                        break;
+                    case 'diamond':
+                        geometry = new THREE.OctahedronGeometry(0.2 * scale);
+                        break;
+                    default:
+                        geometry = new THREE.BoxGeometry(0.3 * scale, 0.3 * scale, 0.3 * scale);
+                }
+
+                const material = new THREE.MeshStandardMaterial({
+                    color: color,
+                    metalness: 0.6,
+                    roughness: 0.2,
+                    emissive: new THREE.Color(color).multiplyScalar(0.1),
+                });
+
+                const mesh = new THREE.Mesh(geometry, material);
+                mesh.castShadow = true;
+                mesh.receiveShadow = true;
+
+                const edges = new THREE.EdgesGeometry(geometry);
+                const lineMat = new THREE.LineBasicMaterial({ 
+                    color: 0xffffff, 
+                    transparent: true, 
+                    opacity: 0.3 
+                });
+                const wireframe = new THREE.LineSegments(edges, lineMat);
+                mesh.add(wireframe);
+
+                const position = new THREE.Vector3(
+                    (Math.random() - 0.5) * 1.5,
+                    (Math.random() - 0.5) * 0.8 - 0.2,
+                    -2.0 - Math.random() * 0.5
+                );
+
+                mesh.position.copy(position);
+                mesh.rotation.x = (Math.random() - 0.5) * 0.5;
+                mesh.rotation.y = (Math.random() - 0.5) * 0.5;
+                mesh.rotation.z = (Math.random() - 0.5) * 0.5;
+
+                markerRoot.add(mesh);
+
+                const objData = {
+                    id: ++state.objectCounter,
+                    mesh: mesh,
+                    position: position.clone(),
+                    type: type,
+                    name: name,
+                    color: color,
+                    source: 'Objeto 3D',
+                    imported: true,
+                    scale: scale,
+                    originalData: modelData
+                };
+
+                state.fixedObjects.push(objData);
+                updateObjectsList();
+                updateCoordsDisplay(position);
+
+                showToast('🎯 Objeto 3D importado: ' + name, 'success');
+                console.log('✅ Objeto importado:', objData);
+            }
+
+            // ============================================================
+            // RECIBIR UBICACIONES DESDE ubicacion.html
+            // ============================================================
+            function checkForLocations() {
+                window.addEventListener('message', (event) => {
+                    if (event.data && event.data.type === 'IMPORT_LOCATION') {
+                        importLocation(event.data.locationData);
+                    }
+                });
+
+                setInterval(() => {
+                    try {
+                        const stored = localStorage.getItem('imported_locations');
+                        if (stored) {
+                            const locations = JSON.parse(stored);
+                            if (locations.length > 0) {
+                                locations.forEach(locData => {
+                                    if (!state.importedLocations.includes(locData.id)) {
+                                        importLocation(locData);
+                                        state.importedLocations.push(locData.id);
+                                    }
+                                });
+                                localStorage.removeItem('imported_locations');
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('Error al leer ubicaciones importadas:', e);
+                    }
+                }, 2000);
+            }
+
+            function importLocation(locationData) {
+                console.log('📍 Importando ubicación GPS:', locationData);
+
+                const position = new THREE.Vector3(
+                    (Math.random() - 0.5) * 1.5,
+                    (Math.random() - 0.5) * 0.8 - 0.2,
+                    -2.0 - Math.random() * 0.5
+                );
+
+                const mesh = createObject3D('location', 0x00b894, 0.8);
+                mesh.position.copy(position);
+                markerRoot.add(mesh);
+
+                const objData = {
+                    id: ++state.objectCounter,
+                    mesh: mesh,
+                    position: position.clone(),
+                    type: 'location',
+                    name: `📍 ${locationData.name || 'Ubicación GPS'}`,
+                    color: 0x00b894,
+                    source: 'GPS',
+                    imported: true,
+                    locationData: locationData
+                };
+
+                state.fixedObjects.push(objData);
+                updateObjectsList();
+                updateCoordsDisplay(position);
+
+                const canvas = document.createElement('canvas');
+                canvas.width = 256;
+                canvas.height = 64;
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = 'rgba(0,0,0,0.5)';
+                if (ctx.roundRect) {
+                    ctx.roundRect(0, 0, canvas.width, canvas.height, 10);
+                    ctx.fill();
+                } else {
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                }
+                ctx.fillStyle = '#00b894';
+                ctx.font = 'bold 24px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(objData.name, canvas.width/2, canvas.height/2);
+
+                const texture = new THREE.CanvasTexture(canvas);
+                const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true });
+                const sprite = new THREE.Sprite(spriteMat);
+                sprite.position.set(position.x, position.y + 0.4, position.z);
+                sprite.scale.set(0.6, 0.15, 1);
+                markerRoot.add(sprite);
+                objData.label = sprite;
+
+                showToast(`📍 Ubicación GPS importada: ${objData.name}`, 'success');
+            }
+
+            function addDemoObjects() {
+                setTimeout(() => {
+                    const demoPositions = [
+                        new THREE.Vector3(-0.8, 0.2, -1.5),
+                        new THREE.Vector3(0, 0.5, -2.0),
+                        new THREE.Vector3(0.8, 0.1, -1.5),
+                    ];
+
+                    const types = ['cube', 'sphere', 'torus'];
+                    const colors = [0x4a7cf7, 0x6c5ce7, 0xfd79a8];
+
+                    demoPositions.forEach((pos, i) => {
+                        const mesh = createObject3D(types[i], colors[i], 0.6);
+                        mesh.position.copy(pos);
+                        markerRoot.add(mesh);
+
+                        state.fixedObjects.push({
+                            id: ++state.objectCounter,
+                            mesh: mesh,
+                            position: pos.clone(),
+                            type: types[i],
+                            name: `demo_${types[i]}`,
+                            color: colors[i],
+                            source: 'AR',
+                        });
+                    });
+
+                    updateObjectsList();
+                    console.log('🎯 Objetos de demostración cargados');
+                }, 1500);
+            }
+
+            function animate() {
+                requestAnimationFrame(animate);
+
+                const time = Date.now() * 0.001;
+                state.fixedObjects.forEach((obj, index) => {
+                    if (obj.mesh) {
+                        if (obj.type === 'location') {
+                            const floatOffset = Math.sin(time * 0.8 + index) * 0.08;
+                            obj.mesh.position.y = obj.position.y + floatOffset;
+                            obj.mesh.children.forEach(child => {
+                                if (child.type === 'Torus') {
+                                    child.rotation.z = time * 0.5;
+                                }
+                            });
+                        } else {
+                            obj.mesh.rotation.x += 0.005;
+                            obj.mesh.rotation.y += 0.01;
+                            obj.mesh.rotation.z += 0.003;
+
+                            const floatOffset = Math.sin(time * 0.5 + index) * 0.05;
+                            obj.mesh.position.y = obj.position.y + floatOffset;
+
+                            const scalePulse = 1 + Math.sin(time * 0.3 + index * 1.5) * 0.02;
+                            const baseScale = 0.6;
+                            if (!obj.isGLTF) {
+                                obj.mesh.scale.set(
+                                    baseScale * scalePulse,
+                                    baseScale * scalePulse,
+                                    baseScale * scalePulse
+                                );
+                            }
+                        }
+                    }
+                });
+
+                renderer.render(scene, camera);
+            }
+
+            function resetCamera() {
+                camera.position.set(0, 0, 2);
+                camera.lookAt(0, 0, -1);
+                showToast('🔄 Cámara reseteada', 'info');
+            }
+
+            function handleResize() {
+                const width = window.innerWidth;
+                const height = window.innerHeight;
+
+                if (renderer) {
+                    renderer.setSize(width, height);
+                }
+
+                if (camera) {
+                    const aspect = width / height;
+                    camera.aspect = aspect;
+                    camera.updateProjectionMatrix();
+                }
+            }
+
+            window.removeObject = removeObject;
+            window.fixObjectAtCurrentPosition = fixObjectAtCurrentPosition;
+            window.clearAllObjects = clearAllObjects;
+            window.toggleObjectsPanel = toggleObjectsPanel;
+            window.resetCamera = resetCamera;
+
+            btnFixObject.addEventListener('click', fixObjectAtCurrentPosition);
+            btnTogglePanel.addEventListener('click', toggleObjectsPanel);
+            btnClearAll.addEventListener('click', clearAllObjects);
+            btnResetCamera.addEventListener('click', resetCamera);
+
+            window.addEventListener('resize', handleResize);
+
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'f' || e.key === 'F') { fixObjectAtCurrentPosition(); }
+                if (e.key === 'l' || e.key === 'L') { toggleObjectsPanel(); }
+                if (e.key === 'c' || e.key === 'C') { clearAllObjects(); }
+            });
+
+            console.log('🎬 VisualCam AR - Realidad Aumentada');
+            console.log('📦 Soporte para:');
+            console.log('   - Cámara en tiempo real');
+            console.log('   - Objetos 3D desde insertar_objeto.html');
+            console.log('   - Modelos GLTF/GLB');
+            console.log('   - Ubicaciones GPS desde ubicacion.html');
+            console.log('   - Fijar objetos en AR');
+
+            initThreeJS();
+            setTimeout(startCameraAsBackground, 1000);
+            setTimeout(handleResize, 500);
+
+            console.log('✅ VisualCam AR listo');
+            console.log('📖 Atajos: [F] Fijar | [L] Lista | [C] Limpiar');
+
+        })();
+    </script>
+
+</body>
+</html>

@@ -1,0 +1,1176 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>VisualCam - Ubicación GPS + Objetos 3D</title>
+    
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #0a0e17;
+            color: #ffffff;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .nav-header {
+            background: rgba(10, 14, 23, 0.95);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 0.8rem 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 1rem;
+            z-index: 100;
+            position: sticky;
+            top: 0;
+        }
+
+        .nav-header .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.8rem;
+            text-decoration: none;
+            color: white;
+        }
+
+        .nav-header .logo i { font-size: 1.5rem; color: #4a7cf7; }
+        .nav-header .logo h1 { font-size: 1.2rem; font-weight: 600; }
+        .nav-header .logo span { font-size: 0.7rem; color: rgba(255, 255, 255, 0.4); display: block; }
+
+        .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 0.8rem;
+            flex-wrap: wrap;
+        }
+
+        .nav-links a {
+            color: rgba(255, 255, 255, 0.6);
+            text-decoration: none;
+            padding: 0.4rem 1rem;
+            border-radius: 50px;
+            font-size: 0.85rem;
+            transition: all 0.3s ease;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .nav-links a:hover { background: rgba(255, 255, 255, 0.05); color: white; }
+        .nav-links a.active { background: rgba(74, 124, 247, 0.15); color: #4a7cf7; border-color: rgba(74, 124, 247, 0.2); }
+        .nav-links a i { font-size: 0.9rem; }
+
+        .main-content {
+            flex: 1;
+            padding: 2rem;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            max-width: 1400px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        .gps-panel {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 1.5rem;
+            padding: 1.5rem;
+            backdrop-filter: blur(10px);
+        }
+
+        .gps-panel h2 {
+            font-size: 1rem;
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.6);
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.8rem;
+            flex-wrap: wrap;
+        }
+
+        .gps-panel h2 .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.75rem;
+            font-weight: 400;
+        }
+
+        .gps-panel h2 .status-indicator .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .gps-panel h2 .status-indicator .dot.active {
+            background: #4cd964;
+            animation: pulse 2s infinite;
+        }
+
+        .gps-panel h2 .status-indicator .dot.inactive { background: #ff6b6b; }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        .gps-container {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 1rem;
+            padding: 1.5rem;
+            min-height: 200px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 1rem;
+        }
+
+        .gps-container .coords-display {
+            font-family: monospace;
+            font-size: 1.2rem;
+            color: rgba(255, 255, 255, 0.8);
+            text-align: center;
+        }
+
+        .gps-container .coords-display .label {
+            font-size: 0.7rem;
+            color: rgba(255, 255, 255, 0.3);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .gps-container .coords-display .value {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #4a7cf7;
+            margin: 0.2rem 0;
+        }
+
+        .gps-container .accuracy {
+            font-size: 0.8rem;
+            color: rgba(255, 255, 255, 0.3);
+        }
+
+        .gps-container .accuracy .good { color: #4cd964; }
+        .gps-container .accuracy .medium { color: #ffc107; }
+        .gps-container .accuracy .poor { color: #ff6b6b; }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.6rem;
+            padding: 0.6rem 1.5rem;
+            border: none;
+            border-radius: 50px;
+            font-family: 'Inter', sans-serif;
+            font-weight: 500;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: rgba(255, 255, 255, 0.05);
+            color: rgba(255, 255, 255, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            text-decoration: none;
+        }
+
+        .btn:hover { transform: translateY(-2px); background: rgba(255, 255, 255, 0.08); color: white; }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #4a7cf7, #6c5ce7);
+            color: white;
+            border: none;
+            box-shadow: 0 8px 24px rgba(74, 124, 247, 0.3);
+        }
+
+        .btn-primary:hover { box-shadow: 0 12px 32px rgba(74, 124, 247, 0.4); transform: translateY(-2px); color: white; }
+
+        .btn-success {
+            background: rgba(76, 217, 100, 0.15);
+            color: #4cd964;
+            border-color: rgba(76, 217, 100, 0.2);
+        }
+
+        .btn-success:hover { background: rgba(76, 217, 100, 0.2); color: #4cd964; }
+
+        .btn-danger {
+            background: rgba(255, 107, 107, 0.15);
+            color: #ff6b6b;
+            border-color: rgba(255, 107, 107, 0.2);
+        }
+
+        .btn-danger:hover { background: rgba(255, 107, 107, 0.2); color: #ff6b6b; }
+
+        .btn-info {
+            background: rgba(23, 162, 184, 0.15);
+            color: #17a2b8;
+            border-color: rgba(23, 162, 184, 0.2);
+        }
+
+        .btn-info:hover { background: rgba(23, 162, 184, 0.2); color: #17a2b8; }
+
+        .btn-ar {
+            background: linear-gradient(135deg, #6c5ce7, #00b894);
+            color: white;
+            border: none;
+            box-shadow: 0 8px 24px rgba(108, 92, 231, 0.3);
+        }
+
+        .btn-ar:hover { box-shadow: 0 12px 32px rgba(108, 92, 231, 0.4); transform: translateY(-2px); color: white; }
+
+        .btn-warning {
+            background: rgba(255, 193, 7, 0.15);
+            color: #ffc107;
+            border-color: rgba(255, 193, 7, 0.2);
+        }
+
+        .btn-warning:hover { background: rgba(255, 193, 7, 0.2); color: #ffc107; }
+
+        .info-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .info-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 1.5rem;
+            padding: 1.5rem;
+        }
+
+        .info-card h3 {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.4);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 1rem;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.8rem;
+        }
+
+        .info-item {
+            background: rgba(255, 255, 255, 0.02);
+            padding: 0.8rem;
+            border-radius: 0.8rem;
+            border: 1px solid rgba(255, 255, 255, 0.03);
+        }
+
+        .info-item .label {
+            font-size: 0.65rem;
+            color: rgba(255, 255, 255, 0.3);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .info-item .value {
+            font-size: 1rem;
+            font-weight: 600;
+            color: white;
+            margin-top: 0.2rem;
+            font-family: monospace;
+        }
+
+        .info-item .value .highlight { color: #4a7cf7; }
+
+        /* Lista de ubicaciones */
+        .locations-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .locations-list::-webkit-scrollbar { width: 4px; }
+        .locations-list::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 10px; }
+
+        .location-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.6rem 0.8rem;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.03);
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .location-item:hover { background: rgba(255, 255, 255, 0.05); border-color: rgba(74, 124, 247, 0.2); }
+        .location-item.active { border-color: rgba(74, 124, 247, 0.3); background: rgba(74, 124, 247, 0.05); }
+
+        .location-item .info { display: flex; flex-direction: column; gap: 0.1rem; }
+        .location-item .info .name { font-size: 0.85rem; font-weight: 500; color: white; }
+        .location-item .info .coords { font-size: 0.65rem; color: rgba(255, 255, 255, 0.3); font-family: monospace; }
+
+        .location-item .actions {
+            display: flex;
+            gap: 0.3rem;
+        }
+
+        .location-item .actions button {
+            background: none;
+            border: none;
+            color: rgba(255, 255, 255, 0.3);
+            cursor: pointer;
+            padding: 0.3rem 0.5rem;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+            font-size: 0.8rem;
+        }
+
+        .location-item .actions button:hover { color: white; background: rgba(255, 255, 255, 0.05); }
+        .location-item .actions button.delete:hover { color: #ff6b6b; background: rgba(255, 107, 107, 0.1); }
+        .location-item .actions button.send-ar:hover { color: #00b894; background: rgba(0, 184, 148, 0.1); }
+        .location-item .actions button.eye:hover { color: #4a7cf7; background: rgba(74, 124, 247, 0.1); }
+
+        /* Formulario de ubicación */
+        .location-form {
+            display: flex;
+            flex-direction: column;
+            gap: 0.8rem;
+            margin-top: 0.5rem;
+        }
+
+        .location-form .form-row {
+            display: flex;
+            gap: 0.8rem;
+            flex-wrap: wrap;
+        }
+
+        .location-form .form-row input {
+            flex: 1;
+            padding: 0.5rem 0.8rem;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            color: white;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.85rem;
+            min-width: 100px;
+        }
+
+        .location-form .form-row input:focus {
+            outline: none;
+            border-color: #4a7cf7;
+        }
+
+        .location-form .form-row input::placeholder {
+            color: rgba(255, 255, 255, 0.2);
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 2rem;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(10, 14, 23, 0.95);
+            backdrop-filter: blur(20px);
+            padding: 0.8rem 1.5rem;
+            border-radius: 50px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            color: white;
+            font-size: 0.9rem;
+            z-index: 1000;
+            display: none;
+            animation: slideUp 0.3s ease-out;
+        }
+
+        .toast.show { display: flex; align-items: center; gap: 0.8rem; }
+        .toast.success { border-color: rgba(76, 217, 100, 0.3); }
+        .toast.error { border-color: rgba(255, 107, 107, 0.3); }
+        .toast.info { border-color: rgba(74, 124, 247, 0.3); }
+        .toast i { font-size: 1rem; }
+        .toast.success i { color: #4cd964; }
+        .toast.error i { color: #ff6b6b; }
+        .toast.info i { color: #4a7cf7; }
+
+        @keyframes slideUp {
+            0% { opacity: 0; transform: translateX(-50%) translateY(20px); }
+            100% { opacity: 1; transform: translateX(-50%) translateY(0); }
+        }
+
+        /* Modal para seleccionar objeto 3D */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(10px);
+            z-index: 1000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+        }
+
+        .modal-overlay.active { display: flex; }
+
+        .modal {
+            background: #1a1f2e;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 1.5rem;
+            padding: 2rem;
+            max-width: 500px;
+            width: 100%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal h3 { font-size: 1.2rem; margin-bottom: 1.5rem; color: white; }
+        .modal .form-group { margin-bottom: 1rem; }
+
+        .modal .form-group label {
+            display: block;
+            font-size: 0.85rem;
+            color: rgba(255, 255, 255, 0.6);
+            margin-bottom: 0.3rem;
+        }
+
+        .modal .form-group select {
+            width: 100%;
+            padding: 0.5rem 0.8rem;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            color: white;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.9rem;
+        }
+
+        .modal .form-group select:focus { outline: none; border-color: #4a7cf7; }
+        .modal .form-group select option { background: #1a1f2e; color: white; }
+
+        .modal .modal-actions {
+            display: flex;
+            gap: 0.8rem;
+            margin-top: 1.5rem;
+        }
+
+        .modal .modal-actions .btn { flex: 1; justify-content: center; }
+
+        @media (max-width: 1024px) {
+            .main-content { grid-template-columns: 1fr; padding: 1rem; gap: 1rem; }
+            .nav-header { padding: 0.6rem 1rem; }
+        }
+
+        @media (max-width: 768px) {
+            .nav-header .logo h1 { font-size: 1rem; }
+            .nav-header .logo span { display: none; }
+            .nav-links a span { display: none; }
+            .nav-links a { padding: 0.4rem 0.8rem; font-size: 0.8rem; }
+            .gps-container .coords-display .value { font-size: 1.2rem; }
+        }
+
+        @media (max-width: 480px) {
+            .main-content { padding: 0.5rem; }
+            .gps-panel { padding: 0.8rem; border-radius: 1rem; }
+            .gps-container { padding: 1rem; min-height: 150px; }
+            .info-grid { grid-template-columns: 1fr; }
+            .nav-links a i { font-size: 1.1rem; }
+            .location-form .form-row input { min-width: 60px; font-size: 0.75rem; }
+            .modal { padding: 1rem; }
+        }
+
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: rgba(255, 255, 255, 0.02); }
+        ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.1); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2); }
+    </style>
+</head>
+<body>
+
+    <header class="nav-header">
+        <a href="/modulos/main" class="logo">
+            <i class="fas fa-arrow-left"></i>
+            <div>
+                <h1>VisualCam</h1>
+                <span>Ubicación GPS + Objetos 3D</span>
+            </div>
+        </a>
+        <div class="nav-links">
+            <a href="/modulos/main"><i class="fas fa-cube"></i><span>AR</span></a>
+            <a href="/modulos/camara"><i class="fas fa-camera"></i><span>Cámara</span></a>
+            <a href="/modulos/insertar_objeto"><i class="fas fa-cube"></i><span>Objetos 3D</span></a>
+            <a href="/modulos/ubicacion" class="active"><i class="fas fa-location-dot"></i><span>Ubicación</span></a>
+            <a href="/modulos/efectos"><i class="fas fa-magic"></i><span>Efectos</span></a>
+            <a href="/modulos/historial"><i class="fas fa-clock-rotate-left"></i><span>Historial</span></a>
+        </div>
+    </header>
+
+    <div class="main-content">
+
+        <!-- Panel GPS -->
+        <section class="gps-panel">
+            <h2>
+                <i class="fas fa-location-dot"></i>
+                Posición GPS
+                <span class="status-indicator">
+                    <span class="dot inactive" id="gpsStatusDot"></span>
+                    <span id="gpsStatusText">Inactivo</span>
+                </span>
+            </h2>
+
+            <div class="gps-container">
+                <div class="coords-display">
+                    <div class="label">Latitud</div>
+                    <div class="value" id="latValue">--</div>
+                </div>
+                <div class="coords-display">
+                    <div class="label">Longitud</div>
+                    <div class="value" id="lngValue">--</div>
+                </div>
+                <div class="accuracy" id="accuracyValue">
+                    <span class="poor">⏳ Esperando señal GPS...</span>
+                </div>
+            </div>
+
+            <div class="video-controls" style="margin-top:1rem;display:flex;gap:0.8rem;flex-wrap:wrap;">
+                <button class="btn btn-primary" id="btnStartGPS">
+                    <i class="fas fa-play"></i>
+                    <span>Iniciar GPS</span>
+                </button>
+                <button class="btn btn-success" id="btnSaveLocation">
+                    <i class="fas fa-floppy-disk"></i>
+                    <span>Guardar ubicación</span>
+                </button>
+                <button class="btn btn-warning" id="btnSendWithObject">
+                    <i class="fas fa-cube"></i>
+                    <span>Enviar con objeto 3D</span>
+                </button>
+                <button class="btn btn-ar" id="btnSendToAR">
+                    <i class="fas fa-cube"></i>
+                    <span>Enviar a AR</span>
+                </button>
+                <button class="btn btn-danger" id="btnStopGPS">
+                    <i class="fas fa-stop"></i>
+                    <span>Detener</span>
+                </button>
+            </div>
+
+            <!-- Formulario para agregar ubicación manual -->
+            <div class="location-form" style="margin-top:1rem;">
+                <div class="form-row">
+                    <input type="text" id="locationName" placeholder="Nombre de la ubicación" />
+                    <input type="number" id="manualLat" placeholder="Latitud" step="any" />
+                    <input type="number" id="manualLng" placeholder="Longitud" step="any" />
+                </div>
+                <button class="btn btn-info" id="btnAddManual">
+                    <i class="fas fa-plus"></i>
+                    <span>Agregar manual</span>
+                </button>
+            </div>
+        </section>
+
+        <!-- Panel de información -->
+        <div class="info-panel">
+
+            <!-- Información GPS -->
+            <div class="info-card">
+                <h3><i class="fas fa-satellite"></i> Información GPS</h3>
+                <div class="info-grid">
+                    <div class="info-item">
+                        <div class="label">Estado</div>
+                        <div class="value" id="gpsStatus">Inactivo</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="label">Precisión</div>
+                        <div class="value" id="gpsAccuracy">-</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="label">Altitud</div>
+                        <div class="value" id="gpsAltitude">-</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="label">Velocidad</div>
+                        <div class="value" id="gpsSpeed">-</div>
+                    </div>
+                    <div class="info-item" style="grid-column: span 2;">
+                        <div class="label">Última actualización</div>
+                        <div class="value" id="gpsUpdate">-</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Ubicaciones guardadas -->
+            <div class="info-card">
+                <h3>
+                    <i class="fas fa-list"></i>
+                    Ubicaciones guardadas
+                    <span class="count" id="locationCount" style="background:rgba(74,124,247,0.15);padding:0.1rem 0.6rem;border-radius:12px;font-size:0.7rem;color:#4a7cf7;margin-left:0.5rem;">0</span>
+                </h3>
+                <div class="locations-list" id="locationsList">
+                    <div style="text-align:center;color:rgba(255,255,255,0.15);padding:1rem;font-size:0.8rem;">
+                        <i class="fas fa-location-dot" style="display:block;font-size:1.5rem;margin-bottom:0.5rem;"></i>
+                        No hay ubicaciones guardadas
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para seleccionar objeto 3D -->
+    <div class="modal-overlay" id="modalOverlay">
+        <div class="modal">
+            <h3><i class="fas fa-cube"></i> Seleccionar objeto 3D</h3>
+            <div class="form-group">
+                <label>Objeto 3D a enviar con la ubicación</label>
+                <select id="selectObject3D">
+                    <option value="none">Ninguno (solo ubicación)</option>
+                    <option value="cube">Cubo</option>
+                    <option value="sphere">Esfera</option>
+                    <option value="pyramid">Pirámide</option>
+                    <option value="torus">Toro</option>
+                    <option value="diamond">Diamante</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Color del objeto</label>
+                <input type="color" id="objectColor" value="#4a7cf7" style="width:100%;padding:0.3rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.05);border-radius:8px;" />
+            </div>
+            <div class="form-group">
+                <label>Escala del objeto</label>
+                <input type="range" id="objectScale" min="0.3" max="2" step="0.1" value="0.8" style="width:100%;" />
+                <span id="objectScaleValue" style="font-family:monospace;font-size:0.8rem;color:rgba(255,255,255,0.6);">0.8</span>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-primary" id="modalSend">Enviar a AR</button>
+                <button class="btn" id="modalClose">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast">
+        <i class="fas fa-check-circle"></i>
+        <span id="toastMessage">Mensaje</span>
+    </div>
+
+    <script>
+        (function() {
+            'use strict';
+
+            // ============================================================
+            // DOM REFERENCIAS
+            // ============================================================
+            const latValue = document.getElementById('latValue');
+            const lngValue = document.getElementById('lngValue');
+            const accuracyValue = document.getElementById('accuracyValue');
+            const gpsStatusDot = document.getElementById('gpsStatusDot');
+            const gpsStatusText = document.getElementById('gpsStatusText');
+            const gpsStatus = document.getElementById('gpsStatus');
+            const gpsAccuracy = document.getElementById('gpsAccuracy');
+            const gpsAltitude = document.getElementById('gpsAltitude');
+            const gpsSpeed = document.getElementById('gpsSpeed');
+            const gpsUpdate = document.getElementById('gpsUpdate');
+            const locationsList = document.getElementById('locationsList');
+            const locationCount = document.getElementById('locationCount');
+
+            const btnStartGPS = document.getElementById('btnStartGPS');
+            const btnStopGPS = document.getElementById('btnStopGPS');
+            const btnSaveLocation = document.getElementById('btnSaveLocation');
+            const btnSendToAR = document.getElementById('btnSendToAR');
+            const btnSendWithObject = document.getElementById('btnSendWithObject');
+            const btnAddManual = document.getElementById('btnAddManual');
+
+            const locationName = document.getElementById('locationName');
+            const manualLat = document.getElementById('manualLat');
+            const manualLng = document.getElementById('manualLng');
+
+            // Modal
+            const modalOverlay = document.getElementById('modalOverlay');
+            const selectObject3D = document.getElementById('selectObject3D');
+            const objectColor = document.getElementById('objectColor');
+            const objectScale = document.getElementById('objectScale');
+            const objectScaleValue = document.getElementById('objectScaleValue');
+            const modalSend = document.getElementById('modalSend');
+            const modalClose = document.getElementById('modalClose');
+
+            const toast = document.getElementById('toast');
+            const toastMessage = document.getElementById('toastMessage');
+
+            // ============================================================
+            // ESTADO
+            // ============================================================
+            const state = {
+                watchId: null,
+                currentPosition: null,
+                locations: [],
+                isTracking: false,
+                accuracy: null,
+                selectedLocationIndex: -1,
+            };
+
+            // ============================================================
+            // FUNCIONES DE UI
+            // ============================================================
+            function showToast(message, type = 'success') {
+                toast.className = `toast show ${type}`;
+                toastMessage.textContent = message;
+                clearTimeout(toast._timeout);
+                toast._timeout = setTimeout(() => {
+                    toast.classList.remove('show');
+                }, 3000);
+            }
+
+            function updateGPSStatus(activa) {
+                state.isTracking = activa;
+                if (activa) {
+                    gpsStatusDot.className = 'dot active';
+                    gpsStatusText.textContent = 'Activo';
+                    gpsStatus.textContent = 'Activo';
+                    gpsStatus.style.color = '#4cd964';
+                    btnStartGPS.innerHTML = '<i class="fas fa-sync"></i> <span>Reiniciar GPS</span>';
+                } else {
+                    gpsStatusDot.className = 'dot inactive';
+                    gpsStatusText.textContent = 'Inactivo';
+                    gpsStatus.textContent = 'Inactivo';
+                    gpsStatus.style.color = '#ff6b6b';
+                    btnStartGPS.innerHTML = '<i class="fas fa-play"></i> <span>Iniciar GPS</span>';
+                }
+            }
+
+            function updatePosition(position) {
+                const { latitude, longitude, accuracy, altitude, speed } = position.coords;
+                
+                state.currentPosition = position.coords;
+                state.accuracy = accuracy;
+
+                latValue.textContent = latitude.toFixed(6);
+                lngValue.textContent = longitude.toFixed(6);
+
+                let accuracyClass = 'good';
+                let accuracyText = 'Excelente';
+                if (accuracy > 50) { accuracyClass = 'poor'; accuracyText = 'Baja'; }
+                else if (accuracy > 20) { accuracyClass = 'medium'; accuracyText = 'Media'; }
+                
+                accuracyValue.innerHTML = `
+                    <span class="${accuracyClass}">📡 Precisión: ${accuracy.toFixed(0)}m (${accuracyText})</span>
+                `;
+
+                gpsAccuracy.textContent = `${accuracy.toFixed(0)}m - ${accuracyText}`;
+                gpsAltitude.textContent = altitude ? `${altitude.toFixed(1)}m` : '--';
+                gpsSpeed.textContent = speed ? `${(speed * 3.6).toFixed(1)} km/h` : '--';
+                gpsUpdate.textContent = new Date().toLocaleTimeString();
+
+                updateGPSStatus(true);
+            }
+
+            function updateLocationsList() {
+                if (state.locations.length === 0) {
+                    locationsList.innerHTML = `
+                        <div style="text-align:center;color:rgba(255,255,255,0.15);padding:1rem;font-size:0.8rem;">
+                            <i class="fas fa-location-dot" style="display:block;font-size:1.5rem;margin-bottom:0.5rem;"></i>
+                            No hay ubicaciones guardadas
+                        </div>
+                    `;
+                    locationCount.textContent = '0';
+                    return;
+                }
+
+                locationCount.textContent = state.locations.length;
+                locationsList.innerHTML = state.locations.map((loc, index) => `
+                    <div class="location-item">
+                        <div class="info">
+                            <span class="name">
+                                <i class="fas fa-location-dot" style="color:#4a7cf7;margin-right:6px;"></i>
+                                ${loc.name || 'Ubicación ' + (index + 1)}
+                            </span>
+                            <span class="coords">
+                                ${loc.lat.toFixed(6)} | ${loc.lng.toFixed(6)}
+                                ${loc.accuracy ? ` | ±${loc.accuracy}m` : ''}
+                            </span>
+                        </div>
+                        <div class="actions">
+                            <button class="send-ar" onclick="window.sendLocationToAR(${index})" title="Enviar a AR">
+                                <i class="fas fa-cube"></i>
+                            </button>
+                            <button class="send-ar" onclick="window.sendLocationWithObject(${index})" title="Enviar con objeto 3D" style="color:#ffc107;">
+                                <i class="fas fa-cube"></i>
+                            </button>
+                            <button class="eye" onclick="window.viewLocation(${index})" title="Ver">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                            <button class="delete" onclick="window.deleteLocation(${index})" title="Eliminar">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                    </div>
+                `).join('');
+            }
+
+            // ============================================================
+            // FUNCIONES GPS
+            // ============================================================
+            function startGPS() {
+                if (!navigator.geolocation) {
+                    showToast('GPS no disponible en este dispositivo', 'error');
+                    return;
+                }
+
+                if (state.watchId) {
+                    navigator.geolocation.clearWatch(state.watchId);
+                    state.watchId = null;
+                }
+
+                showToast('🌐 Buscando señal GPS...', 'info');
+
+                const options = {
+                    enableHighAccuracy: true,
+                    timeout: 30000,
+                    maximumAge: 5000
+                };
+
+                state.watchId = navigator.geolocation.watchPosition(
+                    (position) => {
+                        updatePosition(position);
+                        showToast('📍 GPS actualizado', 'info');
+                    },
+                    (error) => {
+                        console.error('Error GPS:', error);
+                        let msg = 'Error al obtener ubicación';
+                        switch(error.code) {
+                            case error.PERMISSION_DENIED: msg = 'Permiso denegado. Activa el GPS.'; break;
+                            case error.POSITION_UNAVAILABLE: msg = 'Señal GPS no disponible'; break;
+                            case error.TIMEOUT: msg = 'Tiempo de espera agotado'; break;
+                        }
+                        showToast('⚠️ ' + msg, 'error');
+                        updateGPSStatus(false);
+                        latValue.textContent = '--';
+                        lngValue.textContent = '--';
+                        accuracyValue.innerHTML = `<span class="poor">⚠️ ${msg}</span>`;
+                    },
+                    options
+                );
+
+                navigator.geolocation.getCurrentPosition(
+                    (position) => updatePosition(position),
+                    (error) => {
+                        console.warn('Error en posición inicial:', error);
+                    },
+                    { enableHighAccuracy: true, timeout: 5000 }
+                );
+
+                updateGPSStatus(true);
+            }
+
+            function stopGPS() {
+                if (state.watchId) {
+                    navigator.geolocation.clearWatch(state.watchId);
+                    state.watchId = null;
+                }
+                updateGPSStatus(false);
+                showToast('GPS detenido', 'info');
+            }
+
+            // ============================================================
+            // GUARDAR UBICACIÓN
+            // ============================================================
+            function saveCurrentLocation() {
+                if (!state.currentPosition) {
+                    showToast('Activa el GPS primero', 'error');
+                    return;
+                }
+
+                const name = prompt('Nombre de la ubicación:', `Ubicación ${state.locations.length + 1}`);
+                if (name === null) return;
+
+                const location = {
+                    name: name || `Ubicación ${state.locations.length + 1}`,
+                    lat: state.currentPosition.latitude,
+                    lng: state.currentPosition.longitude,
+                    accuracy: state.currentPosition.accuracy || null,
+                    altitude: state.currentPosition.altitude || null,
+                    timestamp: new Date().toISOString(),
+                };
+
+                state.locations.push(location);
+                updateLocationsList();
+                showToast('✅ Ubicación guardada: ' + location.name, 'success');
+                console.log('📍 Ubicación guardada:', location);
+            }
+
+            function addManualLocation() {
+                const name = locationName.value.trim();
+                const lat = parseFloat(manualLat.value);
+                const lng = parseFloat(manualLng.value);
+
+                if (!name || isNaN(lat) || isNaN(lng)) {
+                    showToast('Completa todos los campos', 'error');
+                    return;
+                }
+
+                if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+                    showToast('Coordenadas inválidas', 'error');
+                    return;
+                }
+
+                const location = {
+                    name: name,
+                    lat: lat,
+                    lng: lng,
+                    accuracy: null,
+                    altitude: null,
+                    timestamp: new Date().toISOString(),
+                    manual: true,
+                };
+
+                state.locations.push(location);
+                updateLocationsList();
+                showToast('✅ Ubicación manual agregada: ' + name, 'success');
+
+                locationName.value = '';
+                manualLat.value = '';
+                manualLng.value = '';
+            }
+
+            // ============================================================
+            // ENVIAR A REALIDAD AUMENTADA
+            // ============================================================
+            function sendLocationToAR(index) {
+                if (index < 0 || index >= state.locations.length) return;
+                const loc = state.locations[index];
+
+                const locationData = {
+                    id: Date.now() + Math.random() * 1000,
+                    name: loc.name,
+                    lat: loc.lat,
+                    lng: loc.lng,
+                    accuracy: loc.accuracy,
+                    type: 'location',
+                    objectData: null,
+                };
+
+                saveAndSendLocation(locationData);
+                showToast(`🚀 Ubicación enviada a AR: ${loc.name}`, 'success');
+            }
+
+            function sendLocationWithObject(index) {
+                if (index < 0 || index >= state.locations.length) return;
+                state.selectedLocationIndex = index;
+                modalOverlay.classList.add('active');
+            }
+
+            function sendLocationWithObjectData(index, objectData) {
+                if (index < 0 || index >= state.locations.length) return;
+                const loc = state.locations[index];
+
+                const locationData = {
+                    id: Date.now() + Math.random() * 1000,
+                    name: loc.name,
+                    lat: loc.lat,
+                    lng: loc.lng,
+                    accuracy: loc.accuracy,
+                    type: 'location_with_object',
+                    objectData: objectData,
+                };
+
+                saveAndSendLocation(locationData);
+                showToast(`🚀 Ubicación + Objeto 3D enviado a AR: ${loc.name}`, 'success');
+                modalOverlay.classList.remove('active');
+            }
+
+            function saveAndSendLocation(locationData) {
+                // Guardar en localStorage
+                try {
+                    const stored = JSON.parse(localStorage.getItem('imported_locations') || '[]');
+                    stored.push(locationData);
+                    localStorage.setItem('imported_locations', JSON.stringify(stored));
+                } catch (e) {
+                    localStorage.setItem('imported_locations', JSON.stringify([locationData]));
+                }
+
+                // Enviar por postMessage
+                try {
+                    if (window.opener && !window.opener.closed) {
+                        window.opener.postMessage({
+                            type: 'IMPORT_LOCATION',
+                            locationData: locationData
+                        }, '*');
+                    }
+                    
+                    window.postMessage({
+                        type: 'IMPORT_LOCATION',
+                        locationData: locationData
+                    }, '*');
+                } catch (e) {
+                    console.warn('Error al enviar postMessage:', e);
+                }
+
+                // Abrir AR
+                window.open('/modulos/main', '_blank');
+            }
+
+            function viewLocation(index) {
+                if (index < 0 || index >= state.locations.length) return;
+                const loc = state.locations[index];
+                window.open(`https://www.google.com/maps?q=${loc.lat},${loc.lng}`, '_blank');
+            }
+
+            function deleteLocation(index) {
+                if (index < 0 || index >= state.locations.length) return;
+                if (!confirm(`¿Eliminar "${state.locations[index].name}"?`)) return;
+
+                state.locations.splice(index, 1);
+                updateLocationsList();
+                showToast('🗑️ Ubicación eliminada', 'info');
+            }
+
+            // ============================================================
+            // MODAL - ENVIAR CON OBJETO 3D
+            // ============================================================
+            objectScale.addEventListener('input', () => {
+                objectScaleValue.textContent = parseFloat(objectScale.value).toFixed(1);
+            });
+
+            modalSend.addEventListener('click', () => {
+                const objType = selectObject3D.value;
+                const color = objectColor.value;
+                const scale = parseFloat(objectScale.value);
+
+                if (objType === 'none') {
+                    // Solo enviar ubicación sin objeto
+                    sendLocationToAR(state.selectedLocationIndex);
+                    modalOverlay.classList.remove('active');
+                    return;
+                }
+
+                // Crear datos del objeto 3D
+                const objectData = {
+                    type: objType,
+                    color: color,
+                    scale: scale,
+                    name: `${objType}_${Date.now()}`,
+                };
+
+                sendLocationWithObjectData(state.selectedLocationIndex, objectData);
+            });
+
+            modalClose.addEventListener('click', () => {
+                modalOverlay.classList.remove('active');
+            });
+
+            modalOverlay.addEventListener('click', (e) => {
+                if (e.target === modalOverlay) {
+                    modalOverlay.classList.remove('active');
+                }
+            });
+
+            // ============================================================
+            // EXPONER FUNCIONES GLOBALES
+            // ============================================================
+            window.sendLocationToAR = sendLocationToAR;
+            window.sendLocationWithObject = sendLocationWithObject;
+            window.viewLocation = viewLocation;
+            window.deleteLocation = deleteLocation;
+
+            // ============================================================
+            // EVENT LISTENERS
+            // ============================================================
+            btnStartGPS.addEventListener('click', startGPS);
+            btnStopGPS.addEventListener('click', stopGPS);
+            btnSaveLocation.addEventListener('click', saveCurrentLocation);
+            btnSendToAR.addEventListener('click', () => {
+                if (state.locations.length === 0) {
+                    showToast('No hay ubicaciones guardadas', 'error');
+                    return;
+                }
+                sendLocationToAR(state.locations.length - 1);
+            });
+            btnSendWithObject.addEventListener('click', () => {
+                if (state.locations.length === 0) {
+                    showToast('No hay ubicaciones guardadas', 'error');
+                    return;
+                }
+                sendLocationWithObject(state.locations.length - 1);
+            });
+            btnAddManual.addEventListener('click', addManualLocation);
+
+            // Enter en campos manuales
+            manualLat.addEventListener('keydown', (e) => { if (e.key === 'Enter') addManualLocation(); });
+            manualLng.addEventListener('keydown', (e) => { if (e.key === 'Enter') addManualLocation(); });
+            locationName.addEventListener('keydown', (e) => { if (e.key === 'Enter') addManualLocation(); });
+
+            // ============================================================
+            // INICIALIZACIÓN
+            // ============================================================
+            console.log('📍 VisualCam - Módulo Ubicación GPS + Objetos 3D');
+
+            // Cargar ubicaciones guardadas del localStorage
+            try {
+                const stored = localStorage.getItem('saved_locations');
+                if (stored) {
+                    state.locations = JSON.parse(stored);
+                    updateLocationsList();
+                    console.log(`📍 Cargadas ${state.locations.length} ubicaciones guardadas`);
+                }
+            } catch (e) {
+                console.warn('Error al cargar ubicaciones:', e);
+            }
+
+            // Guardar ubicaciones automáticamente
+            setInterval(() => {
+                try {
+                    localStorage.setItem('saved_locations', JSON.stringify(state.locations));
+                } catch (e) {
+                    console.warn('Error al guardar ubicaciones:', e);
+                }
+            }, 5000);
+
+            console.log('📖 Atajos:');
+            console.log('   [Espacio] Iniciar/Detener GPS');
+            console.log('   [S] Guardar ubicación actual');
+            console.log('   [A] Enviar a Realidad Aumentada');
+            console.log('   [O] Enviar con objeto 3D');
+
+            document.addEventListener('keydown', (e) => {
+                if (e.key === ' ' || e.key === 'Space') {
+                    e.preventDefault();
+                    if (state.isTracking) {
+                        stopGPS();
+                    } else {
+                        startGPS();
+                    }
+                }
+                if ((e.key === 's' || e.key === 'S') && state.currentPosition) {
+                    saveCurrentLocation();
+                }
+                if ((e.key === 'a' || e.key === 'A') && state.locations.length > 0) {
+                    sendLocationToAR(state.locations.length - 1);
+                }
+                if ((e.key === 'o' || e.key === 'O') && state.locations.length > 0) {
+                    sendLocationWithObject(state.locations.length - 1);
+                }
+                if (e.key === 'Escape') {
+                    modalOverlay.classList.remove('active');
+                }
+            });
+
+        })();
+    </script>
+
+</body>
+</html>
